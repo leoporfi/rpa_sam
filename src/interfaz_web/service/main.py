@@ -743,6 +743,559 @@ def FeedbackModal(message, message_type, on_dismiss):
     )
 
 
+# --- Componente para Gestionar Programaciones ---
+@component
+def ProgramacionesManager(robots_list, equipos_list, app_set_show_feedback, app_set_feedback_message, app_set_feedback_type, app_set_show_confirmation, app_set_confirmation_message, app_set_on_confirm_action_callback):
+    programaciones, set_programaciones = use_state([])
+    loading, set_loading = use_state(True)
+    error, set_error = use_state("")
+
+    filter_robot_nombre, set_filter_robot_nombre = use_state("")
+    filter_tipo_programacion, set_filter_tipo_programacion = use_state("")
+
+    show_programacion_form, set_show_programacion_form = use_state(False)
+    editing_programacion_data, set_editing_programacion_data = use_state(None)
+    # Estas listas se reciben como props ahora:
+    # all_robots_list_for_form, set_all_robots_list_for_form = use_state([])
+    # all_equipos_list_for_form, set_all_equipos_list_for_form = use_state([])
+
+
+    async def fetch_programaciones():
+        set_loading(True)
+        set_error("")
+        if not db:
+            set_error("Error de conexión a la base de datos.")
+            set_programaciones([])
+            set_loading(False)
+            return
+        try:
+            data = await asyncio.to_thread(db.ejecutar_consulta, "EXEC dbo.ListarProgramaciones", None, True)
+            set_programaciones(data or [])
+        except Exception as e:
+            print(f"Error fetching programaciones: {e}")
+            set_error(f"Error al cargar programaciones: {str(e)}")
+            set_programaciones([])
+        finally:
+            set_loading(False)
+
+    use_effect(lambda: asyncio.ensure_future(fetch_programaciones()), [])
+    # No necesitamos cargar robots y equipos aquí, se pasan como props
+
+    def handle_filter_robot_nombre_change(event):
+        set_filter_robot_nombre(event["target"]["value"])
+
+    def handle_filter_tipo_programacion_change(event):
+        set_filter_tipo_programacion(event["target"]["value"])
+
+    def open_create_programacion_form():
+        set_editing_programacion_data(None)
+        set_show_programacion_form(True)
+
+    def open_edit_programacion_form(prog_data):
+        # prog_data ya debería tener RobotId, EquiposProgramados (string), etc.
+        # La transformación a equipo_ids (lista de IDs) se hará en ProgramacionForm
+        set_editing_programacion_data(prog_data)
+        set_show_programacion_form(True)
+
+    async def handle_save_programacion_form(form_submission_details):
+        # form_submission_details contendrá: sp_name, params_dict, is_update
+        sp_name = form_submission_details["sp_name"]
+        params_dict = form_submission_details["params_dict"]
+        is_update = form_submission_details["is_update"]
+
+        # Construir tupla de parámetros en el orden correcto para el SP
+        # Esto es crucial y depende de la firma de cada SP
+        # Ejemplo para ActualizarProgramacionCompleta (debe coincidir con su definición)
+        if is_update:
+            # @ProgramacionId, @RobotId, @TipoProgramacion, @HoraInicio, @DiasSemana, @DiaDelMes, @FechaEspecifica, @Tolerancia, @Equipos, @UsuarioModifica, @Activo
+            param_order = [
+                "@ProgramacionId", "@RobotId", "@TipoProgramacion", "@HoraInicio",
+                "@DiasSemana", "@DiaDelMes", "@FechaEspecifica", "@Tolerancia",
+                "@Equipos", "@UsuarioModifica", "@Activo"
+            ]
+        else: # Para CargarProgramacion...
+            # @Robot, @Equipos, @HoraInicio, @Tolerancia, (@DiasSemana | @DiaDelMes | @FechasEspecificas), @Activo
+            # El parámetro de día/fecha es dinámico y se añade al final de esta lista base
+            param_order = ["@Robot", "@Equipos", "@HoraInicio", "@Tolerancia"]
+            if params_dict.get("@DiasSemana") is not None:
+                param_order.append("@DiasSemana")
+            elif params_dict.get("@DiaDelMes") is not None:
+                param_order.append("@DiaDelMes")
+            elif params_dict.get("@FechasEspecificas") is not None: # Debe ser FechasEspecificas para el SP
+                 param_order.append("@FechasEspecificas")
+            param_order.append("@Activo")
+
+
+        params_tuple = tuple(params_dict[k] for k in param_order if k in params_dict)
+        query_sp_call = f"EXEC {sp_name} {', '.join(['?' for _ in params_tuple])}"
+
+        try:
+            await asyncio.to_thread(db.ejecutar_consulta, query_sp_call, params_tuple, False)
+            app_set_feedback_message("Programación guardada correctamente.")
+            app_set_feedback_type("success")
+            set_show_programacion_form(False)
+            await fetch_programaciones() # Refrescar la lista
+        except Exception as e:
+            print(f"Error guardando programación: {e}")
+            app_set_feedback_message(f"Error al guardar programación: {str(e)}")
+            app_set_feedback_type("error")
+        app_set_show_feedback(True)
+
+
+    def trigger_save_confirmation(form_submission_details):
+        action_verb = "actualizar" if form_submission_details["is_update"] else "crear"
+        app_set_confirmation_message(f"¿Está seguro de que desea {action_verb} esta programación?")
+
+        async def actual_action():
+            await handle_save_programacion_form(form_submission_details)
+
+        # Esto es una función que devuelve una corutina, así que está bien.
+        app_set_on_confirm_action_callback(lambda: actual_action)
+        app_set_show_confirmation(True)
+
+
+    def handle_cancel_programacion_form():
+        set_show_programacion_form(False)
+        set_editing_programacion_data(None)
+
+    # Acciones para la tabla de programaciones (Editar, Eliminar)
+    async def handle_eliminar_programacion_action(prog_id, robot_id_for_delete): # robot_id es necesario para EliminarProgramacionCompleta
+        if not db:
+            app_set_feedback_message("Error BD.")
+            app_set_feedback_type("error")
+            app_set_show_feedback(True)
+            return
+        try:
+            # Asegúrate que el SP y los parámetros son correctos.
+            # Este SP podría necesitar @RobotId también.
+            await asyncio.to_thread(
+                db.ejecutar_consulta,
+                "EXEC dbo.EliminarProgramacionCompleta @ProgramacionId=?, @RobotId=?, @UsuarioModifica=?",
+                (prog_id, robot_id_for_delete, "WebApp_Delete_PM"), # Pasamos RobotId
+                False,
+            )
+            app_set_feedback_message(f"Programación {prog_id} eliminada.")
+            app_set_feedback_type("success")
+            await fetch_programaciones() # Refrescar
+        except Exception as e:
+            app_set_feedback_message(f"Error eliminando programación: {str(e)}")
+            app_set_feedback_type("error")
+        app_set_show_feedback(True)
+
+    def trigger_delete_programacion_confirmation(prog):
+        # prog es el diccionario completo de la programación de ListarProgramaciones
+        prog_id = prog["ProgramacionId"]
+        robot_id = prog["RobotId"] # Necesitamos RobotId para el SP de eliminación
+        robot_nombre = prog.get("RobotNombre", "Desconocido")
+
+        app_set_confirmation_message(f"¿Eliminar programación ID {prog_id} del robot '{robot_nombre}'?")
+
+        async def actual_action():
+            await handle_eliminar_programacion_action(prog_id, robot_id)
+
+        app_set_on_confirm_action_callback(lambda: actual_action)
+        app_set_show_confirmation(True)
+
+
+    filtered_programaciones = programaciones
+    if filter_robot_nombre:
+        filtered_programaciones = [
+            p for p in filtered_programaciones
+            if filter_robot_nombre.lower() in p.get("RobotNombre", "").lower()
+        ]
+    if filter_tipo_programacion:
+        filtered_programaciones = [
+            p for p in filtered_programaciones
+            if filter_tipo_programacion.lower() in p.get("TipoProgramacion", "").lower()
+        ]
+
+    table_header = html.thead(
+        html.tr(
+            html.th("ID"),
+            html.th("Robot"),
+            html.th("Tipo"),
+            html.th("Hora Inicio"),
+            html.th("Equipos Programados"),
+            html.th("Activo"),
+            html.th("Acciones"),
+        )
+    )
+
+    table_rows = [
+        html.tr(
+            {"key": prog["ProgramacionId"]},
+            html.td(prog["ProgramacionId"]),
+            html.td(prog.get("RobotNombre", "N/A")),
+            html.td(prog.get("TipoProgramacion", "N/A")),
+            html.td(str(prog.get("HoraInicio", "N/A"))),
+            html.td(prog.get("EquiposProgramados") or "Ninguno"),
+            html.td("Sí" if prog.get("Activo") else "No"),
+            html.td(
+                html.button(
+                    # Pasamos el objeto 'prog' completo a la función de edición
+                    {"on_click": lambda event, p=prog: open_edit_programacion_form(p), "class_name": "btn-accion-secundario"},
+                    "Editar",
+                ),
+                html.button(
+                    # Pasamos el objeto 'prog' completo a la función de eliminación
+                    {"on_click": lambda event, p=prog: trigger_delete_programacion_confirmation(p), "class_name": "btn-accion-peligro"},
+                    "Eliminar",
+                ),
+            ),
+        )
+        for prog in filtered_programaciones
+    ]
+
+    if loading:
+        return html.div(
+            {"class_name": "programaciones-manager-content"}, # Added a wrapper class
+            html.h2("Gestor de Programaciones"),
+            html.p("Cargando programaciones...")
+        )
+
+    if error:
+        return html.div(
+            {"class_name": "programaciones-manager-content"}, # Added a wrapper class
+            html.h2("Gestor de Programaciones"),
+            html.p(error, {"style": {"color": "red"}}),
+            html.button({"on_click": lambda ev: asyncio.ensure_future(fetch_programaciones()), "class_name": "btn-accion"}, "Reintentar"),
+        )
+
+    return html.div(
+        {"class_name": "programaciones-manager-container"}, # Main container for the manager
+        html.h2("Gestor de Programaciones"),
+        html.div(
+            {"class_name": "filter-controls"},
+            html.input(
+                {
+                    "type": "text",
+                    "placeholder": "Filtrar por Robot...",
+                    "value": filter_robot_nombre,
+                    "on_change": handle_filter_robot_nombre_change,
+                    "class_name": "search-input", # Reusing existing class
+                    "style": {"margin_right": "10px"}
+                }
+            ),
+            html.input(
+                {
+                    "type": "text",
+                    "placeholder": "Filtrar por Tipo...",
+                    "value": filter_tipo_programacion,
+                    "on_change": handle_filter_tipo_programacion_change,
+                    "class_name": "search-input", # Reusing existing class
+                }
+            ),
+        ),
+        html.button(
+            {"on_click": lambda ev: open_create_programacion_form(), "class_name": "btn-accion", "style": {"margin_bottom": "10px", "margin_top": "10px"}},
+            "Crear Programación"
+        ),
+        html.table(
+            {"class_name": "sam-table"},
+            table_header,
+            html.tbody(table_rows if filtered_programaciones else html.tr(html.td({"colSpan": 7}, "No hay programaciones para mostrar."))),
+        ),
+        # Formulario de Programación (Modal)
+        ProgramacionForm(
+            initial_data=editing_programacion_data,
+            robots_list=robots_list, # Pasamos la lista de robots
+            equipos_list=equipos_list, # Pasamos la lista de equipos
+            on_save=trigger_save_confirmation, # Usamos el trigger que incluye confirmación
+            on_cancel=handle_cancel_programacion_form,
+        ) if show_programacion_form else html.div(),
+    )
+
+# --- Componente ProgramacionForm ---
+@component
+def ProgramacionForm(initial_data, robots_list, equipos_list, on_save, on_cancel):
+    # Si initial_data no es None, estamos en modo edición
+    is_edit_mode = initial_data is not None
+
+    # Mapeo de nombres de equipos a IDs para inicializar el formulario en modo edición
+    equipos_map_name_to_id = {eq["Equipo"].upper().strip(): eq["EquipoId"] for eq in equipos_list}
+
+    # Estado inicial del formulario
+    default_form_values = {
+        "RobotId": robots_list[0]["RobotId"] if robots_list and not is_edit_mode else "",
+        "TipoProgramacion": "Diaria",
+        "HoraInicio": "09:00:00",
+        "DiasSemana": "LU,MA,MI,JU,VI",
+        "DiaDelMes": 1,
+        "FechaEspecifica": date.today().isoformat(),
+        "Tolerancia": 60,
+        "Activo": True,
+        "equipo_ids": [], # Lista de IDs de equipos seleccionados
+    }
+
+    form_data, set_form_data = use_state(default_form_values)
+    # Para saber cuándo inicializar el form_data si initial_data cambia (p.ej. al abrir modal)
+    form_initialized, set_form_initialized = use_state(False)
+
+    @use_effect(dependencies=[initial_data, equipos_list, robots_list])
+    def _initialize_form_on_edit():
+        nonlocal form_initialized # Necesitamos modificar la variable externa
+        if is_edit_mode and initial_data:
+            # Convertir EquiposProgramados (string) a lista de IDs
+            current_team_names_str = initial_data.get("EquiposProgramados", "")
+            selected_team_ids = []
+            if current_team_names_str: # Puede ser None o vacío
+                current_team_names = [name.strip() for name in current_team_names_str.split(",") if name.strip()]
+                for name in current_team_names:
+                    team_id = equipos_map_name_to_id.get(name.upper().strip())
+                    if team_id is not None:
+                        selected_team_ids.append(team_id)
+
+            # Convertir HoraInicio si es un objeto time de la base de datos
+            hora_inicio_val = initial_data.get("HoraInicio")
+            if hasattr(hora_inicio_val, 'isoformat'): # Comprueba si es un objeto time
+                 hora_inicio_str = hora_inicio_val.strftime('%H:%M:%S')
+            else: # Si ya es string o None
+                 hora_inicio_str = str(hora_inicio_val or "09:00:00")
+
+            # Convertir FechaEspecifica si es un objeto date/datetime
+            fecha_especifica_val = initial_data.get("FechaEspecifica")
+            if hasattr(fecha_especifica_val, 'isoformat'):
+                fecha_especifica_str = fecha_especifica_val.isoformat().split('T')[0] # Solo fecha
+            else:
+                fecha_especifica_str = str(fecha_especifica_val or date.today().isoformat())
+
+
+            set_form_data({
+                "ProgramacionId": initial_data.get("ProgramacionId"), # Necesario para actualizar
+                "RobotId": initial_data.get("RobotId"),
+                "TipoProgramacion": initial_data.get("TipoProgramacion", "Diaria"),
+                "HoraInicio": hora_inicio_str,
+                "DiasSemana": initial_data.get("DiasSemana", "LU,MA,MI,JU,VI"),
+                "DiaDelMes": initial_data.get("DiaDelMes", 1),
+                "FechaEspecifica": fecha_especifica_str,
+                "Tolerancia": initial_data.get("Tolerancia", 60),
+                "Activo": initial_data.get("Activo", True),
+                "equipo_ids": selected_team_ids,
+            })
+        elif not is_edit_mode:
+            # Resetea al default si se abre para crear uno nuevo
+            set_form_data(default_form_values)
+        set_form_initialized(True) # Marcar como inicializado
+
+    if not form_initialized and is_edit_mode: # Evita renderizar el form con datos vacíos mientras se inicializa
+        return html.div({"class_name": "modal-overlay"}, html.div({"class_name": "modal-content"}, html.p("Cargando datos del formulario...")))
+
+
+    def handle_input_change(field, event_or_value):
+        value = event_or_value
+        if isinstance(event_or_value, dict) and "target" in event_or_value: # Evento de input/select
+            target = event_or_value["target"]
+            if target["type"] == "checkbox":
+                value = target["checked"]
+            else:
+                value = target["value"]
+
+        # Para DiaDelMes y Tolerancia, asegurarse que son números
+        if field == "DiaDelMes" or field == "Tolerancia":
+            try:
+                value = int(value) if value else 0
+            except ValueError:
+                value = form_data.get(field) # Mantener valor anterior si no es número
+
+        set_form_data(lambda old: {**old, field: value})
+
+    def handle_equipo_selection_change(equipo_id, event):
+        is_checked = event["target"]["checked"]
+        current_ids = form_data.get("equipo_ids", [])
+        if is_checked:
+            if equipo_id not in current_ids:
+                set_form_data(lambda old: {**old, "equipo_ids": sorted(current_ids + [equipo_id])})
+        else:
+            set_form_data(lambda old: {**old, "equipo_ids": [eid for eid in current_ids if eid != equipo_id]})
+
+    async def handle_submit(event):
+        event["preventDefault"]() # Prevenir recarga de página si es un form HTML tradicional
+
+        # Validaciones básicas (puedes expandir esto)
+        if not form_data.get("RobotId") and not is_edit_mode:
+            print("ERROR: RobotId es requerido.") # Reemplazar con feedback visual
+            return
+        if not form_data.get("equipo_ids"):
+            print("ERROR: Debe seleccionar al menos un equipo.") # Reemplazar con feedback visual
+            return
+
+        # Preparar datos para el SP
+        # Necesitamos el nombre del Robot para los SP CargarProgramacion...
+        robot_name = ""
+        if not is_edit_mode: # Para creación
+            robot_seleccionado = next((r for r in robots_list if r["RobotId"] == form_data.get("RobotId")), None)
+            if robot_seleccionado:
+                robot_name = robot_seleccionado["Robot"]
+            else:
+                print("Error: Robot seleccionado no encontrado en la lista.")
+                return # O manejar error
+
+        # Convertir lista de equipo_ids a string de nombres de equipos
+        equipos_map_id_to_name = {eq["EquipoId"]: eq["Equipo"] for eq in equipos_list}
+        selected_team_names = [equipos_map_id_to_name.get(int(tid)) for tid in form_data.get("equipo_ids", []) if equipos_map_id_to_name.get(int(tid))]
+        nombres_equipos_str = ", ".join(selected_team_names)
+
+        params_dict = {
+            "@HoraInicio": str(form_data.get("HoraInicio", "00:00:00")),
+            "@Tolerancia": int(form_data.get("Tolerancia", 60)),
+            "@Equipos": nombres_equipos_str,
+            "@Activo": form_data.get("Activo", True),
+            # UsuarioModifica se puede añadir aquí o en el backend si es fijo
+        }
+
+        sp_name = ""
+        if is_edit_mode:
+            sp_name = "dbo.ActualizarProgramacionCompleta"
+            params_dict["@ProgramacionId"] = form_data.get("ProgramacionId")
+            params_dict["@RobotId"] = form_data.get("RobotId") # Actualizar usa RobotId
+            params_dict["@UsuarioModifica"] = "WebApp_PM_Update"
+            params_dict["@TipoProgramacion"] = form_data.get("TipoProgramacion")
+        else: # Creación
+            sp_name = f"dbo.CargarProgramacion{form_data.get('TipoProgramacion')}"
+            params_dict["@Robot"] = robot_name # Crear usa nombre de Robot
+            # params_dict["@UsuarioCrea"] = "WebApp_PM_Create" # Si tu SP lo requiere
+
+        # Campos específicos del tipo de programación
+        tipo = form_data.get("TipoProgramacion")
+        if tipo == "Semanal":
+            params_dict["@DiasSemana"] = form_data.get("DiasSemana")
+        elif tipo == "Mensual":
+            params_dict["@DiaDelMes"] = int(form_data.get("DiaDelMes", 1))
+        elif tipo == "Especifica":
+            # El SP CargarProgramacionEspecifica espera @FechasEspecificas
+            params_dict["@FechasEspecificas"] = form_data.get("FechaEspecifica")
+            if is_edit_mode: # ActualizarProgramacionCompleta usa @FechaEspecifica
+                 params_dict["@FechaEspecifica"] = form_data.get("FechaEspecifica")
+
+
+        submission_details = {
+            "sp_name": sp_name,
+            "params_dict": params_dict,
+            "is_update": is_edit_mode,
+        }
+        await on_save(submission_details)
+
+
+    # --- Renderizado de campos dinámicos según TipoProgramacion ---
+    dynamic_fields_render = []
+    current_tipo = form_data.get("TipoProgramacion", "Diaria")
+    if current_tipo == "Semanal":
+        dynamic_fields_render.append(
+            html.div({"class_name": "form-group", "key": "dias_semana_field"},
+                html.label({"for": "dias_semana_input"}, "Días Semana (LU,MA,MI...):"),
+                html.input({
+                    "type": "text", "id": "dias_semana_input",
+                    "value": form_data.get("DiasSemana", ""),
+                    "on_change": partial(handle_input_change, "DiasSemana"),
+                })
+            )
+        )
+    elif current_tipo == "Mensual":
+        dynamic_fields_render.append(
+            html.div({"class_name": "form-group", "key": "dia_mes_field"},
+                html.label({"for": "dia_mes_input"}, "Día del Mes:"),
+                html.input({
+                    "type": "number", "id": "dia_mes_input", "min": "1", "max": "31",
+                    "value": str(form_data.get("DiaDelMes", 1)),
+                    "on_change": partial(handle_input_change, "DiaDelMes"),
+                })
+            )
+        )
+    elif current_tipo == "Especifica":
+        dynamic_fields_render.append(
+            html.div({"class_name": "form-group", "key": "fecha_especifica_field"},
+                html.label({"for": "fecha_especifica_input"}, "Fecha Específica:"),
+                html.input({
+                    "type": "date", "id": "fecha_especifica_input",
+                    "value": form_data.get("FechaEspecifica", date.today().isoformat()),
+                    "on_change": partial(handle_input_change, "FechaEspecifica"),
+                })
+            )
+        )
+
+    robot_options = [html.option({"value": ""}, "Seleccione un robot")] + [
+        html.option({"value": r["RobotId"]}, r["Robot"]) for r in robots_list
+    ]
+
+    equipos_checkboxes = [
+        html.div({"key": f"eq-cb-{eq['EquipoId']}", "class_name": "checkbox-item"},
+            html.input({
+                "type": "checkbox", "id": f"eq-cb-id-{eq['EquipoId']}",
+                "checked": eq["EquipoId"] in form_data.get("equipo_ids", []),
+                "on_change": partial(handle_equipo_selection_change, eq["EquipoId"]),
+            }),
+            html.label({"for": f"eq-cb-id-{eq['EquipoId']}"}, f" {eq['Equipo']}")
+        ) for eq in equipos_list
+    ] if equipos_list else [html.p("No hay equipos activos disponibles.")]
+
+
+    return html.div({"class_name": "modal-overlay"},
+        html.div({"class_name": "modal-content programacion-form-modal"}, # Clase específica para tamaño/estilo
+            html.h2(f"{'Editar' if is_edit_mode else 'Crear'} Programación" + (f" ID: {form_data.get('ProgramacionId')}" if is_edit_mode else "")),
+            html.form({"on_submit": handle_submit},
+                html.div({"class_name": "form-group"},
+                    html.label({"for": "robot_id_select"}, "Robot:"),
+                    html.select({
+                        "id": "robot_id_select", "value": str(form_data.get("RobotId", "")),
+                        "on_change": partial(handle_input_change, "RobotId"),
+                        "disabled": is_edit_mode, # Deshabilitar si está en modo edición
+                    }, robot_options)
+                ),
+                html.div({"class_name": "form-group"},
+                    html.label({"for": "tipo_programacion_select"}, "Tipo de Programación:"),
+                    html.select({
+                        "id": "tipo_programacion_select", "value": form_data.get("TipoProgramacion", "Diaria"),
+                        "on_change": partial(handle_input_change, "TipoProgramacion"),
+                    },  html.option({"value": "Diaria"}, "Diaria"),
+                        html.option({"value": "Semanal"}, "Semanal"),
+                        html.option({"value": "Mensual"}, "Mensual"),
+                        html.option({"value": "Especifica"}, "Específica"),
+                    )
+                ),
+                html.div({"class_name": "form-group"},
+                    html.label({"for": "hora_inicio_input"}, "Hora Inicio (HH:MM:SS):"),
+                    html.input({
+                        "type": "text", "id": "hora_inicio_input", "placeholder": "HH:MM:SS",
+                        "value": form_data.get("HoraInicio", ""),
+                        "on_change": partial(handle_input_change, "HoraInicio"),
+                    })
+                ),
+                *dynamic_fields_render, # Campos que dependen del tipo
+                html.div({"class_name": "form-group"},
+                    html.label({"for": "tolerancia_input"}, "Tolerancia (minutos):"),
+                    html.input({
+                        "type": "number", "id": "tolerancia_input", "min": "0",
+                        "value": str(form_data.get("Tolerancia", 60)),
+                        "on_change": partial(handle_input_change, "Tolerancia"),
+                    })
+                ),
+                html.div({"class_name": "form-group"},
+                    html.label({"for": "equipos_programados_list"}, "Equipos Programados:"),
+                    html.div({
+                        "id": "equipos_programados_list", "class_name": "teams-checkbox-list",
+                         "style": { # Estilos similares a otros selectores de equipos
+                            "max_height": "150px", "overflow_y": "auto",
+                            "border": "1px solid #ced4da", "padding": "10px", "border_radius": "4px"
+                        },
+                    }, equipos_checkboxes)
+                ),
+                 html.div({"class_name": "form-group checkbox-item"}, # Estilo para alinear checkbox y label
+                    html.input({
+                        "type": "checkbox", "id": "activo_checkbox",
+                        "checked": form_data.get("Activo", True),
+                        "on_change": partial(handle_input_change, "Activo"),
+                    }),
+                    html.label({"for": "activo_checkbox", "style": {"margin_left": "5px"}}, " Activo")
+                ),
+                html.div({"class_name": "modal-actions"},
+                    html.button({"type": "submit", "class_name": "btn-accion", "disabled": not form_data.get("equipo_ids")}, "Guardar"),
+                    html.button({"type": "button", "on_click": on_cancel, "class_name": "btn-accion-secundario"}, "Cancelar")
+                )
+            )
+        )
+    )
+
+
 # --- Componente Principal de la Aplicación ---
 @component
 def App():
@@ -774,6 +1327,8 @@ def App():
 
     show_edit_schedule_modal, set_show_edit_schedule_modal = use_state(False)
     schedule_to_edit_data, set_schedule_to_edit_data = use_state(None)
+
+    show_programaciones_manager_view, set_show_programaciones_manager_view = use_state(False) # Estado para el nuevo gestor
 
     current_theme, set_current_theme = use_state("dark")
     sort_key, set_sort_key = use_state("Robot")
@@ -1397,20 +1952,47 @@ def App():
             html.button({"on_click": toggle_theme, "class_name": "btn-accion-secundario theme-toggle-btn"}, "🌓"),
             html.button({"on_click": fetch_robots, "class_name": "btn-accion"}, "Refrescar Datos"),
             html.button({"on_click": handle_open_assignment_form, "class_name": "btn-accion-secundario"}, "Asignar Equipos"),
+            # Botón para mostrar/ocultar el gestor de programaciones
+            html.button(
+                {
+                    "on_click": lambda event: set_show_programaciones_manager_view(not show_programaciones_manager_view),
+                    "class_name": "btn-accion-info" # O cualquier otra clase que prefieras
+                },
+                "Gestionar Programaciones" if not show_programaciones_manager_view else "Ver Robots"
+            ),
         ),
-        html.table(
-            {"class_name": "sam-table"},
-            html.thead(html.tr(*final_table_headers)),
-            html.tbody(table_rows if filtered_robots else html.tr(html.td({"colSpan": len(final_table_headers)}, "No hay robots para mostrar."))),
-        ),
-    ]
+    ] # app_children ahora solo contiene los elementos hasta la barra de botones
 
-    if robot_en_edicion:
+    # Contenido principal: o el gestor de programaciones o la tabla de robots
+    if show_programaciones_manager_view:
+        app_children.append(ProgramacionesManager(
+            robots_list=robots, # Pasamos la lista de robots del estado de App
+            equipos_list=all_active_teams_list, # Pasamos la lista de equipos activos del estado de App
+            app_set_show_feedback=set_show_feedback,
+            app_set_feedback_message=set_feedback_message,
+            app_set_feedback_type=set_feedback_type,
+            app_set_show_confirmation=set_show_confirmation,
+            app_set_confirmation_message=set_confirmation_message,
+            app_set_on_confirm_action_callback=set_on_confirm_action_callback
+        ))
+    else:
+        # Solo muestra la tabla de robots si el gestor de programaciones no está visible
         app_children.append(
+            html.table(
+                {"class_name": "sam-table"},
+                html.thead(html.tr(*final_table_headers)),
+                html.tbody(table_rows if filtered_robots else html.tr(html.td({"colSpan": len(final_table_headers)}, "No hay robots para mostrar."))),
+            )
+        )
+
+    # Modales (se recogen en una lista separada para añadirlos al final)
+    modal_children = []
+    if robot_en_edicion:
+        modal_children.append(
             RobotEditForm(robot=robot_en_edicion, on_save=trigger_robot_edit_confirmation, on_cancel=lambda e: set_robot_en_edicion(None))
         )
     if robot_para_programar:
-        app_children.append(
+        modal_children.append(
             ScheduleCreateForm(
                 robot=robot_para_programar,
                 equipos_disponibles=all_active_teams_list,
@@ -1419,7 +2001,7 @@ def App():
             )
         )
     if show_assignment_form:
-        app_children.append(
+        modal_children.append(
             AssignmentForm(
                 robots=robots,
                 available_teams=available_teams_for_assignment,
@@ -1429,7 +2011,7 @@ def App():
         )
 
     if show_deassignment_modal and robot_for_deassignment:
-        app_children.append(
+        modal_children.append(
             DeassignmentForm(
                 robot_for_deassignment=robot_for_deassignment,
                 teams_for_deassignment=teams_for_deassignment,
@@ -1439,7 +2021,7 @@ def App():
         )
 
     if show_view_schedules_modal and robot_for_schedules:
-        app_children.append(
+        modal_children.append(
             ViewSchedulesModal(
                 robot_for_schedules=robot_for_schedules,
                 schedules_list=schedules_list,
@@ -1450,7 +2032,7 @@ def App():
         )
 
     if show_edit_schedule_modal and schedule_to_edit_data and robot_for_schedules:
-        app_children.append(
+        modal_children.append(
             ScheduleEditForm(
                 schedule_to_edit=schedule_to_edit_data,
                 equipos_disponibles_all=all_active_teams_list,
@@ -1460,10 +2042,11 @@ def App():
         )
 
     if show_confirmation:
-        app_children.append(
+        modal_children.append(
             ConfirmationModal(message=confirmation_message, on_confirm=execute_confirmed_action, on_cancel=lambda e: set_show_confirmation(False))
         )
     if show_feedback:
-        app_children.append(FeedbackModal(message=feedback_message, message_type=feedback_type, on_dismiss=lambda e: set_show_feedback(False)))
+        modal_children.append(FeedbackModal(message=feedback_message, message_type=feedback_type, on_dismiss=lambda e: set_show_feedback(False)))
 
-    return html.div({"class_name": f"container theme-{current_theme}"}, *app_children)
+    # Combina los elementos principales con los modales para el renderizado final
+    return html.div({"class_name": f"container theme-{current_theme}"}, *app_children, *modal_children)
