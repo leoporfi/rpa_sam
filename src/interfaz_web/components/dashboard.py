@@ -71,15 +71,8 @@ def RobotDashboard():
         set_selected_robot({})
         set_modal_view("edit")
 
-    @use_callback
-    async def handle_robot_action(action: str, robot):
-        if action in ["toggle_active", "toggle_online"]:
-            status_key = "Activo" if action == "toggle_active" else "EsOnline"
-            await update_robot_status(robot["RobotId"], {status_key: not robot[status_key]}, show_notification)
-            return
-
+    def handle_robot_action(action: str, robot):
         set_selected_robot(robot)
-
         if action == "edit":
             set_modal_view("edit")
         elif action == "assign":
@@ -95,6 +88,9 @@ def RobotDashboard():
                     "on_confirm": lambda: handle_delete_robot(robot["RobotId"]),
                 }
             )
+        elif action in ["toggle_active", "toggle_online"]:
+            status_key = "Activo" if action == "toggle_active" else "EsOnline"
+            update_robot_status(robot["RobotId"], {status_key: not robot[status_key]}, show_notification)
 
     delete_robot_mutation = robots_state["delete_robot"]
 
