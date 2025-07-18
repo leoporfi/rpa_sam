@@ -54,10 +54,14 @@ def RobotDashboard():
 
     selected_robot, set_selected_robot = use_state(None)
     modal_view, set_modal_view = use_state(None)
+    confirmation_modal_state, set_confirmation_modal_state = use_state(
+        {"is_active": False, "title": "", "message": "", "on_confirm": None}
+    )
 
     def handle_modal_close(event=None):
         set_selected_robot(None)
         set_modal_view(None)
+        close_confirmation_modal()
 
     async def handle_save_and_refresh():
         await refresh_robots()
@@ -68,10 +72,6 @@ def RobotDashboard():
         set_modal_view("edit")
 
     @use_callback
-    confirmation_modal_state, set_confirmation_modal_state = use_state(
-        {"is_active": False, "title": "", "message": "", "on_confirm": None}
-    )
-
     async def handle_robot_action(action: str, robot):
         if action in ["toggle_active", "toggle_online"]:
             status_key = "Activo" if action == "toggle_active" else "EsOnline"
