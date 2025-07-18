@@ -50,7 +50,7 @@ def ActionMenu(actions: List[Dict[str, any]]):
                     html.button(
                         {
                             "key": action["label"],
-                            "className": "dropdown-item has-text-left",  # 'dropdown-item' es la clase clave
+                            "className": f"dropdown-item has-text-left {'is-danger' if action.get('is_danger') else ''}",
                             "onClick": handle_item_click(action["on_click"]),
                         },
                         action["label"],

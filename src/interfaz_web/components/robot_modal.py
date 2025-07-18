@@ -26,6 +26,7 @@ DEFAULT_ROBOT_STATE = {
 def RobotEditModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_success: Callable):
     notification_ctx = use_context(NotificationContext)
     form_data, set_form_data = use_state(DEFAULT_ROBOT_STATE)
+    errors, set_errors = use_state({})
     is_loading, set_is_loading = use_state(False)
 
     is_edit_mode = bool(robot and robot.get("RobotId") is not None)
@@ -51,23 +52,31 @@ def RobotEditModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_suc
                 field_value = None
         set_form_data(lambda old_data: {**old_data, field_name: field_value})
 
+    def validate_form():
+        new_errors = {}
+        if not form_data.get("Robot"):
+            new_errors["Robot"] = "El nombre del robot es requerido."
+        if not is_edit_mode and not form_data.get("RobotId"):
+            new_errors["RobotId"] = "El ID del robot es requerido."
+        if form_data.get("MinEquipos", 1) < 0:
+            new_errors["MinEquipos"] = "El valor no puede ser negativo."
+        if form_data.get("MaxEquipos", -1) < -1:
+            new_errors["MaxEquipos"] = "El valor no puede ser inferior a -1."
+        set_errors(new_errors)
+        return not new_errors
+
     async def handle_save(event):
+        if not validate_form():
+            return
+
         set_is_loading(True)
         show_notification = notification_ctx["show_notification"]
-
-        if not is_edit_mode and not form_data.get("RobotId"):
-            show_notification("El campo 'Robot ID' es requerido para crear un nuevo robot.", "error")
-            set_is_loading(False)
-            return
 
         try:
             async with httpx.AsyncClient() as client:
                 if is_edit_mode:
-                    # --- CORRECCIÓN 2: Obtener el ID y construir la URL correctamente ---
                     robot_id_to_update = robot.get("RobotId")
-                    # El payload para PUT no debe contener el ID del robot
                     payload_to_send = {k: v for k, v in form_data.items() if k not in ["RobotId", "Robot"]}
-
                     url = f"{URL_BASE}/api/robots/{robot_id_to_update}"
                     await client.put(url, json=payload_to_send)
                     show_notification("Robot actualizado con éxito.", "success")
@@ -118,6 +127,7 @@ def RobotEditModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_suc
                                 }
                             ),
                         ),
+                        html.p({"className": "help is-danger"}, errors.get("RobotId", "")),
                     ),
                     # Campo Nombre
                     html.div(
@@ -137,6 +147,7 @@ def RobotEditModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_suc
                                 }
                             ),
                         ),
+                        html.p({"className": "help is-danger"}, errors.get("Robot", "")),
                     ),
                     # Campo Descripción
                     html.div(
@@ -175,6 +186,7 @@ def RobotEditModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_suc
                                         }
                                     ),
                                 ),
+                                html.p({"className": "help is-danger"}, errors.get("MinEquipos", "")),
                             ),
                         ),
                         html.div(
@@ -194,6 +206,7 @@ def RobotEditModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_suc
                                         }
                                     ),
                                 ),
+                                html.p({"className": "help is-danger"}, errors.get("MaxEquipos", "")),
                             ),
                         ),
                         html.div(

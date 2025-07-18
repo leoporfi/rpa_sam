@@ -208,6 +208,22 @@ def update_robot_details(robot_id: int, robot_data: RobotUpdateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.delete("/api/robots/{robot_id}", status_code=204)
+def delete_robot(robot_id: int):
+    """
+    Elimina un robot y sus asignaciones asociadas.
+    """
+    try:
+        # Primero, eliminar asignaciones para evitar conflictos de clave externa
+        db_connector.ejecutar_consulta("DELETE FROM dbo.Asignaciones WHERE RobotId = ?", (robot_id,), es_select=False)
+        # Luego, eliminar el robot
+        rows_affected = db_connector.ejecutar_consulta("DELETE FROM dbo.Robots WHERE RobotId = ?", (robot_id,), es_select=False)
+        if rows_affected == 0:
+            raise HTTPException(status_code=404, detail="Robot no encontrado")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al eliminar el robot: {str(e)}")
+
+
 @app.post("/api/robots", status_code=201)
 def create_robot(robot_data: RobotCreateRequest):
     """

@@ -61,14 +61,26 @@ def use_robots():
         set_filters(new_filters_func)
 
     @use_callback
-    async def update_robot_status(robot_id: int, status_data: Dict[str, bool]):
+    async def update_robot_status(robot_id: int, status_data: Dict[str, bool], show_notification):
         try:
             await api_service.update_robot_status(robot_id, status_data)
             await load_robots()
+            show_notification("Estado del robot actualizado con éxito.", "success")
         except Exception as e:
             set_error(f"Error al actualizar estado del robot {robot_id}: {e}")
+            show_notification(f"Error al actualizar estado del robot: {e}", "danger")
 
     total_pages = use_memo(lambda: max(1, (total_count + PAGE_SIZE - 1) // PAGE_SIZE), [total_count])
+
+    @use_callback
+    async def delete_robot(robot_id: int, show_notification):
+        try:
+            await api_service.delete_robot(robot_id)
+            await load_robots()  # Recargar la lista después de eliminar
+            show_notification("Robot eliminado con éxito.", "success")
+        except Exception as e:
+            set_error(f"Error al eliminar el robot {robot_id}: {e}")
+            show_notification(f"Error al eliminar el robot: {e}", "danger")
 
     # --- EXPONEMOS LOS NUEVOS ESTADOS Y MANEJADORES ---
     return {
@@ -79,6 +91,7 @@ def use_robots():
         "filters": filters,
         "set_filters": handle_set_filters,
         "update_robot_status": update_robot_status,
+        "delete_robot": delete_robot,
         "refresh": load_robots,
         "current_page": current_page,
         "set_current_page": set_current_page,

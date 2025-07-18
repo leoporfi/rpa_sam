@@ -29,10 +29,14 @@ def RobotRow(robot: Robot, on_action: Callable):
     async def handle_toggle_online(event=None):
         await on_action("toggle_online", robot)
 
+    async def handle_delete(event=None):
+        await on_action("delete", robot)
+
     actions = [
         {"label": "Editar Propiedades", "on_click": handle_edit},
         {"label": "Gestionar Asignaciones", "on_click": handle_assign},
         {"label": "Gestionar Programaciones", "on_click": handle_schedule},
+        {"label": "Eliminar Robot", "on_click": handle_delete, "is_danger": True},
     ]
 
     # bulma-switch

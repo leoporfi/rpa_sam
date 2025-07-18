@@ -1,10 +1,12 @@
 # src/interfaz_web/components/dashboard.py
 
-from reactpy import component, html, use_callback, use_effect, use_state
+from reactpy import component, html, use_callback, use_context, use_effect, use_state
 
 from ..hooks.use_debounced_value import use_debounced_value
 from ..hooks.use_robots import use_robots
+from .notifications import NotificationContext
 from .assignments_modal import AssignmentsModal
+from .common.confirmation_modal import ConfirmationModal
 from .common.loading_spinner import LoadingSpinner
 from .common.pagination import Pagination
 from .robot_filters import RobotFilters as RobotFiltersComponent
@@ -24,6 +26,8 @@ def RobotDashboard():
     set_filters = robots_state["set_filters"]
     refresh_robots = robots_state["refresh"]
     update_robot_status = robots_state["update_robot_status"]
+    notification_ctx = use_context(NotificationContext)
+    show_notification = notification_ctx["show_notification"]
     current_page = robots_state["current_page"]
     set_current_page = robots_state["set_current_page"]
     total_pages = robots_state["total_pages"]
@@ -64,22 +68,42 @@ def RobotDashboard():
         set_modal_view("edit")
 
     @use_callback
+    confirmation_modal_state, set_confirmation_modal_state = use_state(
+        {"is_active": False, "title": "", "message": "", "on_confirm": None}
+    )
+
     async def handle_robot_action(action: str, robot):
         if action in ["toggle_active", "toggle_online"]:
             status_key = "Activo" if action == "toggle_active" else "EsOnline"
-            await update_robot_status(robot["RobotId"], {status_key: not robot[status_key]})
+            await update_robot_status(robot["RobotId"], {status_key: not robot[status_key]}, show_notification)
+            return
 
         set_selected_robot(robot)
 
         if action == "edit":
-            set_selected_robot(robot)
             set_modal_view("edit")
         elif action == "assign":
-            set_selected_robot(robot)
             set_modal_view("assign")
         elif action == "schedule":
-            set_selected_robot(robot)
             set_modal_view("schedule")
+        elif action == "delete":
+            set_confirmation_modal_state(
+                {
+                    "is_active": True,
+                    "title": "Confirmar Eliminación",
+                    "message": f"¿Estás seguro de que quieres eliminar el robot '{robot['Robot']}'?",
+                    "on_confirm": lambda: handle_delete_robot(robot["RobotId"]),
+                }
+            )
+
+    delete_robot_mutation = robots_state["delete_robot"]
+
+    async def handle_delete_robot(robot_id):
+        await delete_robot_mutation(robot_id, show_notification)
+        close_confirmation_modal()
+
+    def close_confirmation_modal():
+        set_confirmation_modal_state({"is_active": False, "title": "", "message": "", "on_confirm": None})
 
     # LÓGICA DE RENDERIZADO
     # --- LÓGICA DE RENDERIZADO (CON CORRECCIÓN) ---
@@ -132,5 +156,12 @@ def RobotDashboard():
         ),
         SchedulesModal(
             robot=selected_robot if modal_view == "schedule" else None, on_close=handle_modal_close, on_save_success=handle_save_and_refresh
+        ),
+        ConfirmationModal(
+            is_active=confirmation_modal_state["is_active"],
+            on_close=close_confirmation_modal,
+            on_confirm=confirmation_modal_state["on_confirm"],
+            title=confirmation_modal_state["title"],
+            message=confirmation_modal_state["message"],
         ),
     )

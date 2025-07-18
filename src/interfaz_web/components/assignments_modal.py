@@ -184,8 +184,12 @@ def AssignmentsModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_s
                 html.div(
                     {"className": "buttons"},
                     html.button(
-                        {"className": f"button is-success {'is-loading' if is_loading else ''}", "onClick": handle_save, "disabled": is_loading},
-                        "Guardar",
+                        {
+                            "className": f"button is-success {'is-loading' if is_loading else ''}",
+                            "onClick": handle_save,
+                            "disabled": is_loading or (not to_assign and not to_unassign),
+                        },
+                        "Guardar Cambios",
                     ),
                     html.button({"className": "button", "onClick": on_close, "disabled": is_loading}, "Cancelar"),
                 ),
