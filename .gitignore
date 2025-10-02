@@ -20,6 +20,7 @@ build/
 # Otros
 .DS_Store
 *copy*
+*copia*
 node_modules/
 tests/*
 test_*
@@ -32,3 +33,7 @@ test_*
 uv.lock
 .env.bak
 *.csv
+*.png
+*.svg
+generate_keys.py
+migra.md

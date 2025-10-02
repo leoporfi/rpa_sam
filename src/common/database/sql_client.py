@@ -1,41 +1,37 @@
 # SAM/src/common/database/sql_client.py
 
 import logging
-import sys
 import threading
 import time
 from contextlib import contextmanager
 from datetime import datetime, time
-from pathlib import Path
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import pyodbc
 
-# --- Configuración de Path ---
-COMMON_UTILS_ROOT = Path(__file__).resolve().parent.parent / "utils"
-SAM_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(COMMON_UTILS_ROOT.parent) not in sys.path:
-    sys.path.insert(0, str(COMMON_UTILS_ROOT.parent))
-if str(SAM_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(SAM_PROJECT_ROOT))
+from src.common.utils.config_manager import ConfigManager
 
-try:
-    from common.utils.config_manager import ConfigManager
+# La configuración de sys.path ya no es necesaria aquí.
+# El script de arranque (run_*.py) se encarga de ello.
 
-    # from common.utils.logging_setup import setup_logging
-    # Asumiendo que AutomationAnywhereClient está en lanzador.clients y lo necesitas para type hints
-    if TYPE_CHECKING:  # Para evitar dependencia circular, solo para type hints
-        from lanzador.clients.aa_client import AutomationAnywhereClient
-except ImportError as e:
-    print(f"CRITICAL ERROR en SAM/common/database/sql_client.py: No se pudieron importar módulos: {e}", file=sys.stderr)
-    print(f"sys.path actual: {sys.path}", file=sys.stderr)
-    sys.exit(1)
 
-# Obtener un logger para este módulo. NO se configuran handlers aquí.
-# La configuración (handlers, level) será determinada por la aplicación principal
-# que utilice este módulo (Lanzador o Balanceador).
-logger = logging.getLogger(f"SAM.{Path(__file__).parent.name}.{Path(__file__).stem}")
-# Esto resultará en un logger llamado "SAM.database.sql_client" o similar si __file__.parent.name es "database"
+if TYPE_CHECKING:
+    from src.common.clients.aa_client import AutomationAnywhereClient
+
+# --- OBTENER EL LOGGER (Forma Estandarizada) ---
+# Simplemente obtenemos el logger para este módulo. La configuración
+# (handlers, level, etc.) ya fue establecida por el script de arranque.
+logger = logging.getLogger(__name__)
+
+
+# NUEVO: Enum para los estados de actualización del callback.
+# Esto hace que el código sea mucho más legible y mantenible.
+class UpdateStatus(Enum):
+    UPDATED = 1
+    ALREADY_PROCESSED = 2
+    NOT_FOUND = 3
+    ERROR = 4
 
 
 class DatabaseConnector:
@@ -84,10 +80,10 @@ class DatabaseConnector:
         try:
             conn = pyodbc.connect(connection_string, autocommit=False)
             self._set_current_thread_connection(conn)
-            logger.info(f"Hilo {threading.get_ident()}: Nueva conexión a BD SAM ({self.base_datos}) establecida.")
+            logger.info(f"Hilo {threading.get_ident()}: Nueva conexión a BD ({self.base_datos}) establecida.")
             return conn
         except pyodbc.Error as e:
-            logger.error(f"Hilo {threading.get_ident()}: Error al conectar a BD SAM ({self.base_datos}): {e}", exc_info=True)
+            logger.error(f"Hilo {threading.get_ident()}: Error al conectar a BD ({self.base_datos}): {e}", exc_info=True)
             self._set_current_thread_connection(None)
             raise
 
@@ -241,7 +237,7 @@ class DatabaseConnector:
     def obtener_ejecuciones_en_curso(self) -> List[Dict[str, Any]]:
         try:
             query = (
-                "SELECT DeploymentId, RobotId, EquipoId, UserId FROM dbo.Ejecuciones "
+                "SELECT EjecucionId, DeploymentId, RobotId, EquipoId, UserId, IntentosConciliadorFallidos FROM dbo.Ejecuciones "
                 "WHERE Estado NOT IN ('COMPLETED', 'RUN_COMPLETED', 'RUN_FAILED', 'RUN_ABORTED', 'DEPLOY_FAILED', 'UNKNOWN') "
                 "AND DATEDIFF(SECOND, FechaInicio, GETDATE()) > 30;"
             )
@@ -276,11 +272,7 @@ class DatabaseConnector:
             else:
                 logger.warning(f"Tipo de marca_tiempo_programada '{type(marca_tiempo_programada)}' no esperado. Se guardará Hora como NULL.")
         try:
-            query = """
-                INSERT INTO dbo.Ejecuciones 
-                (DeploymentId, RobotId, EquipoId, UserId, Hora, Estado, FechaInicio) 
-                VALUES (?, ?, ?, ?, ?, ?, GETDATE())
-            """  # noqa: W291
+            query = """INSERT INTO dbo.Ejecuciones (DeploymentId, RobotId, EquipoId, UserId, Hora, Estado, FechaInicio) VALUES (?, ?, ?, ?, ?, ?, GETDATE())"""  # noqa: W291
             # UserId en tu tabla Ejecuciones es nchar(10) NULL, pero a360_user_id es int.
             # Convertir a string para la inserción si la columna es nchar.
             # Viendo SAM.sql, Ejecuciones.UserId es nchar(10), así que castear.
@@ -316,7 +308,7 @@ class DatabaseConnector:
             a360_deployment_id = None
             error_lanzamiento = None
             try:
-                resultado_despliegue = aa_client.desplegar_bot(file_id=db_robot_id, run_as_user_ids=[a360_user_id], bot_input=botInput_plantilla)
+                resultado_despliegue = aa_client.desplegar_bot_v3(file_id=db_robot_id, run_as_user_ids=[a360_user_id], bot_input=botInput_plantilla)
                 a360_deployment_id = resultado_despliegue.get("deploymentId")  # Asumiendo que desplegar_bot devuelve dict
                 error_lanzamiento = resultado_despliegue.get("error")
 
@@ -440,58 +432,55 @@ class DatabaseConnector:
                 logger.error(f"Error inesperado durante executemany con query: {query[:150]}. Error: {ex}", exc_info=True)
                 raise
 
-    def actualizar_ejecucion_desde_callback(self, deployment_id: str, estado_callback: str, callback_payload_str: str) -> bool:
+    def actualizar_ejecucion_desde_callback(self, deployment_id: str, estado_callback: str, callback_payload_str: str) -> UpdateStatus:
         """
-        Actualiza un registro en la tabla Ejecuciones basado en un callback de A360.
-        Intenta parsear la fecha de fin si el estado es terminal.
+        CORRECCIÓN: Lógica refactorizada para ser atómica y evitar deadlocks.
+        Realiza el SELECT y el UPDATE dentro de la misma transacción.
         """
         if not deployment_id or not estado_callback:
-            logger.error("actualizar_ejecucion_desde_callback: Falta deployment_id o estado_callback.")
-            return False
+            logger.error("Falta deployment_id o estado_callback.")
+            return UpdateStatus.ERROR
 
-        # Estados terminales donde se debería registrar FechaFin
-        ESTADOS_TERMINALES_CALLBACK = ["RUN_COMPLETED", "RUN_FAILED", "RUN_ABORTED", "RUN_TIMED_OUT"]
+        ESTADOS_TERMINALES = ["COMPLETED", "RUN_COMPLETED", "RUN_FAILED", "RUN_ABORTED", "RUN_TIMED_OUT", "UNKNOWN"]
 
-        fecha_fin_para_db = None
-        if estado_callback.upper() in ESTADOS_TERMINALES_CALLBACK:
-            fecha_fin_para_db = datetime.now()  # Usar la hora actual del servidor de callback como FechaFin
-
+        # Usamos un solo bloque 'with' para asegurar una única transacción
         try:
-            # Tu tabla Ejecuciones tiene: DeploymentId, Estado, FechaFin, CallbackInfo
-            # FechaInicio ya debería estar.
-            query = """
-            UPDATE dbo.Ejecuciones
-            SET 
-                Estado = ?,
-                FechaFin = CASE WHEN ? IS NOT NULL THEN ? ELSE FechaFin END, -- Solo actualiza FechaFin si se provee
-                CallbackInfo = ?,
-                FechaActualizacion = GETDATE() -- Nueva columna recomendada para tracking
-            WHERE DeploymentId = ?;
-            """  # noqa: W291
+            with self.obtener_cursor() as cursor:
+                # 1. CONSULTAR el estado actual.
+                # SQL Server puede escalar el bloqueo si es necesario dentro de la misma transacción.
+                query_select = "SELECT Estado FROM dbo.Ejecuciones WHERE DeploymentId = ?"
+                cursor.execute(query_select, deployment_id)
+                fila = cursor.fetchone()
 
-            params = (estado_callback, fecha_fin_para_db, fecha_fin_para_db, callback_payload_str, deployment_id)
+                if not fila:
+                    logger.warning(f"Callback para DeploymentId: {deployment_id} no encontrado.")
+                    return UpdateStatus.NOT_FOUND
 
-            rowcount = self.ejecutar_consulta(query, params, es_select=False)
+                estado_actual = fila[0]
 
-            if rowcount is not None and rowcount > 0:
-                logger.info(
-                    f"ÉXITO: Callback para DeploymentId: {deployment_id} actualizado a estado '{estado_callback}'. Filas afectadas: {rowcount}"
-                )
-                return True
-            elif rowcount == 0:
-                logger.warning(
-                    f"AVISO: Callback para DeploymentId: {deployment_id} (Estado: {estado_callback}) no actualizó registros. El ID podría ser incorrecto o ya estaba en estado terminal."
-                )
-                return False  # Técnicamente no es un fallo del sistema, pero la operación no tuvo efecto.
-            else:
-                logger.info(
-                    f"ÉXITO: Callback para DeploymentId: {deployment_id} procesado (estado: {estado_callback}). Driver no reportó conteo de filas."
-                )
-                return True
+                # 2. VERIFICAR si ya está en un estado terminal
+                if estado_actual in ESTADOS_TERMINALES:
+                    logger.info(f"Callback para DeploymentId: {deployment_id} ya en estado final ('{estado_actual}'). No se requieren cambios.")
+                    return UpdateStatus.ALREADY_PROCESSED
+
+                # 3. ACTUALIZAR solo si no está en estado terminal
+                fecha_fin_para_db = datetime.now() if estado_callback.upper() in ESTADOS_TERMINALES else None
+
+                query_update = """
+                UPDATE dbo.Ejecuciones 
+                SET Estado = ?, FechaFin = ?, CallbackInfo = ?, FechaActualizacion = GETDATE()
+                WHERE DeploymentId = ?;
+                """
+                # Usamos COALESCE para no sobreescribir FechaFin con NULL si no es un estado terminal
+                params_update = (estado_callback, fecha_fin_para_db, callback_payload_str, deployment_id)
+                cursor.execute(query_update, params_update)
+
+                logger.info(f"ÉXITO: Callback para DeploymentId: {deployment_id} actualizado a estado '{estado_callback}'.")
+                return UpdateStatus.UPDATED
 
         except Exception as e:
-            logger.error(f"Error al actualizar ejecución desde callback para DeploymentId {deployment_id}: {e}", exc_info=True)
-            return False
+            logger.error(f"Error al actualizar callback para DeploymentId {deployment_id}: {e}", exc_info=True)
+            return UpdateStatus.ERROR
 
     def actualizar_asignaciones_robot(self, robot_id: int, ids_para_asignar: list[int], ids_para_desasignar: list[int]):
         """
@@ -551,9 +540,9 @@ class DatabaseConnector:
         if conn:
             try:
                 conn.close()
-                logger.info(f"Hilo {threading.get_ident()}: Conexión a BD SAM ({self.base_datos}) cerrada.")
+                logger.info(f"Hilo {threading.get_ident()}: Conexión a BD ({self.base_datos}) cerrada.")
             except pyodbc.Error as e:
-                logger.error(f"Hilo {threading.get_ident()}: Error al cerrar conexión a BD SAM ({self.base_datos}): {e}", exc_info=True)
+                logger.error(f"Hilo {threading.get_ident()}: Error al cerrar conexión a BD ({self.base_datos}): {e}", exc_info=True)
             finally:
                 self._set_current_thread_connection(None)
 

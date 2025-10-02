@@ -13,45 +13,45 @@ try:
 
     from src.common.utils.config_loader import ConfigLoader
 
-    ConfigLoader.initialize_service("callback", __file__)
+    ConfigLoader.initialize_service("interfaz_web", __file__)
 
 except Exception as e:
     print(f"Error crítico durante la inicialización de la configuración: {e}")
     sys.exit(1)
 
 # --- Importaciones del Proyecto ---
-from src.callback.service.main import app, create_app
 from src.common.database.sql_client import DatabaseConnector
 from src.common.utils.config_manager import ConfigManager
 from src.common.utils.logging_setup import setup_logging
 
+# Importamos la app y la fábrica desde main
+from src.web.main import app, create_app
+
 # --- Constantes ---
-SERVICE_NAME = "callback"
+SERVICE_NAME = "interfaz_web"
 
 
 def main():
     """
-    Función principal que construye las dependencias, crea la app FastAPI
-    y la ejecuta con Uvicorn.
+    Función principal que construye las dependencias, crea la app
+    y la sirve con Uvicorn.
     """
     setup_logging(service_name=SERVICE_NAME)
     logger = logging.getLogger(__name__)
-
-    logger.info(f"Iniciando el servicio FastAPI: {SERVICE_NAME.capitalize()}")
+    logger.info(f"Iniciando el servicio: {SERVICE_NAME.capitalize()}")
 
     try:
-        # 1. Cargar la configuración necesaria.
-        server_config = ConfigManager.get_callback_server_config()
+        # 1. Cargar la configuración.
+        web_config = ConfigManager.get_interfaz_web_config()
         sql_config = ConfigManager.get_sql_server_config("SQL_SAM")
 
-        # 2. Validación "Falla Rápido" (Fail-Fast).
+        # 2. Validación "Falla Rápido".
         if not all([sql_config.get("servidor"), sql_config.get("base_datos")]):
             raise ValueError("Configuración crítica de la base de datos SAM faltante.")
 
         logger.info("Validación de configuración completada.")
 
-        # 3. Crear las dependencias una sola vez (Inyección de Dependencias).
-        logger.info("Creando instancia del conector de base de datos...")
+        # 3. Crear la dependencia DatabaseConnector.
         db_connector = DatabaseConnector(
             servidor=sql_config["servidor"],
             base_datos=sql_config["base_datos"],
@@ -59,25 +59,19 @@ def main():
             contrasena=sql_config["contrasena"],
         )
 
-        # 4. Crear la aplicación FastAPI, inyectando la dependencia.
-        app = create_app(db_connector=db_connector)
+        # 4. Configurar la aplicación global inyectando la dependencia.
+        create_app(db_connector=db_connector)
 
-        # 5. Configurar y ejecutar Uvicorn.
-        host = server_config.get("host", "0.0.0.0")
-        port = server_config.get("port", 8008)
-        workers = server_config.get("threads", 1)
+        # 5. Ejecutar Uvicorn usando el "import string".
+        host = web_config.get("host", "127.0.0.1")
+        port = web_config.get("port", 8000)
+        reload = web_config.get("debug", False)
 
-        logger.info(f"Iniciando Uvicorn en http://{host}:{port} con {workers} worker(s)...")
-        uvicorn.run(
-            "src.callback.service.main:app",
-            host=host,
-            port=port,
-            workers=workers,
-            log_level=logging.getLogger().getEffectiveLevel(),
-        )
+        logger.info(f"Servidor Uvicorn se iniciará en http://{host}:{port} (Reload: {reload})")
+        uvicorn.run("src.web.main:app", host=host, port=port, reload=reload)
 
     except Exception as e:
-        logger.critical(f"Error crítico no controlado al iniciar el servicio {SERVICE_NAME}: {e}", exc_info=True)
+        logger.critical(f"Error crítico no controlado al iniciar el servicio: {e}", exc_info=True)
         sys.exit(1)
 
 

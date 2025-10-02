@@ -1,45 +1,72 @@
-# SAM/src/balanceador/run_balanceador.py
-"""
-Script principal para ejecutar el servicio Balanceador.
-
-Este script configura el entorno de Python para permitir importaciones relativas
-y lanza el servicio Balanceador. El Balanceador es responsable de distribuir
-la carga de trabajo entre los equipos disponibles.
-
-Autor: Equipo SAM
-Fecha: 2025
-"""
-
+import logging
+import os
+import signal
 import sys
-from pathlib import Path
+from typing import Optional
 
-# === INICIALIZACIÓN DE CONFIGURACIÓN (DEBE SER LO PRIMERO) ===
-SAM_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-SRC_ROOT = SAM_PROJECT_ROOT / "src"
-if str(SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(SRC_ROOT))
+# --- Configuración del Path y Carga de Configuración ---
+try:
+    # Agrega el directorio raíz del proyecto a sys.path
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.abspath(os.path.join(current_dir, "..", ".."))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
 
-# Ahora se importa y utiliza ConfigLoader.
-from common.utils.config_loader import ConfigLoader
+    # Importar y usar ConfigLoader para cargar las variables de .env
+    from src.common.utils.config_loader import ConfigLoader
 
-# Inicializa el servicio 'balanceador'. ConfigLoader se encarga de:
-# 1. Determinar las rutas del proyecto.
-# 2. Modificar sys.path para la ejecución actual.
-# 3. Cargar los archivos .env en el orden correcto de precedencia.
-ConfigLoader.initialize_service("balanceador", __file__)
+    ConfigLoader.initialize_service("balanceador", __file__)
+
+except Exception as e:
+    print(f"Error crítico durante la inicialización de la configuración: {e}")
+    sys.exit(1)
+
+from src.balanceador.service.main import BalanceadorService
+
+# --- Importaciones del Proyecto ---
+from src.common.utils.logging_setup import setup_logging
+
+# --- Constantes y Globales ---
+SERVICE_NAME = "balanceador"
+service_instance: Optional[BalanceadorService] = None
 
 
-# === IMPORTS DE MÓDULOS (DESPUÉS DE LA CONFIGURACIÓN) ===
-# Con sys.path ya configurado, se pueden importar los módulos del servicio.
-from balanceador.service.main import start_balanceador
-from common.utils.config_manager import ConfigManager  # Opcional, para depuración
+def graceful_shutdown(signum, frame):
+    """Manejador de señales para un cierre ordenado."""
+    logging.info(f"Señal de parada recibida (Señal: {signum}). Iniciando cierre ordenado...")
+    if service_instance:
+        service_instance.stop()
+    logging.info("El servicio Balanceador ha finalizado correctamente.")
+    sys.exit(0)
 
-# === EJECUCIÓN DEL SERVICIO ===
+
+def main():
+    """Función principal que inicializa y ejecuta el servicio Balanceador."""
+    global service_instance
+
+    # 1. Configurar el logging para este servicio.
+    setup_logging(service_name=SERVICE_NAME)
+    logging.info(f"Iniciando el servicio: {SERVICE_NAME.capitalize()}")
+
+    try:
+        # 2. Registrar los manejadores de señales.
+        signal.signal(signal.SIGINT, graceful_shutdown)
+        signal.signal(signal.SIGTERM, graceful_shutdown)
+
+        # 3. Crear e iniciar la instancia del servicio.
+        logging.info("Creando instancia del servicio Balanceador...")
+        service_instance = BalanceadorService()
+
+        logging.info("Iniciando el ciclo principal del servicio Balanceador...")
+        service_instance.run()
+
+    except Exception as e:
+        logging.critical(f"Error crítico no controlado en el servicio {SERVICE_NAME}: {e}", exc_info=True)
+        sys.exit(1)
+
+    finally:
+        logging.info(f"El servicio {SERVICE_NAME} ha concluido su ejecución.")
+
+
 if __name__ == "__main__":
-    # Opcional: Imprime un resumen de la configuración para verificar los valores cargados.
-    print("--- Resumen de Configuración para 'Balanceador' ---")
-    ConfigManager.print_config_summary("balanceador")
-    print("--------------------------------------------------")
-
-    # Llama a la función que inicia la lógica del servicio Balanceador.
-    start_balanceador()
+    main()

@@ -30,6 +30,14 @@ class ConfigLoader:
             service_name: Nombre del servicio (ej: 'lanzador', 'balanceador', 'callback', 'interfaz_web')
             run_script_path: Ruta del script run_*.py (opcional, se detecta automáticamente)
         """
+        # --- NUEVA COMPROBACIÓN ---
+        # Si la variable de entorno está presente, significa que el proceso padre
+        # ya realizó esta inicialización. Los procesos hijos (workers) heredarán
+        # esta variable y no repetirán el proceso.
+        if os.getenv("SAM_CONFIG_INITIALIZED") == "True":
+            cls._initialized = True  # Aseguramos que el estado interno sea consistente
+            return
+
         if cls._initialized:
             return
 
@@ -67,6 +75,9 @@ class ConfigLoader:
         cls._load_environment_variables(service_name)
 
         cls._initialized = True
+
+        # Marcar en el entorno que la inicialización se completó
+        os.environ["SAM_CONFIG_INITIALIZED"] = "True"
 
         # Log de inicialización
         print(f"CONFIG_LOADER: Servicio '{service_name}' inicializado", file=sys.stderr)
@@ -125,7 +136,7 @@ class ConfigLoader:
     def _validate_critical_config(cls, service_name: str) -> None:
         """Valida que las configuraciones críticas estén presentes."""
         critical_vars = {
-            "lanzador": ["AA_URL", "AA_USER", "SQL_SAM_HOST", "SQL_SAM_DB_NAME"],
+            "lanzador": ["AA_CR_URL", "AA_CR_USER", "AA_CR_PWD","SQL_SAM_HOST", "SQL_SAM_DB_NAME"],
             "balanceador": ["SQL_SAM_HOST", "SQL_RPA360_HOST", "CLOUDERS_SSH_HOST"],
             "callback": ["CALLBACK_SERVER_HOST", "CALLBACK_SERVER_PORT"],
             "interfaz_web": ["SQL_SAM_HOST", "SQL_SAM_DB_NAME"],

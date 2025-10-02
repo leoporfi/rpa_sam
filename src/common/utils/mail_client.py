@@ -5,41 +5,20 @@ import smtplib
 import sys  # Para sys.stderr y sys.path
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from pathlib import Path  # Para ajustar el path
-from typing import Any, Dict, List, Optional  # Añadido List, Any
+from typing import Dict, Optional
 
-# --- Configuración de Path para encontrar 'common' ---
-# UTILS_DIR = Path(__file__).resolve().parent
-# COMMON_MODULE_ROOT = UTILS_DIR.parent
-# SAM_PROJECT_ROOT = COMMON_MODULE_ROOT.parent
+from src.common.utils.config_manager import ConfigManager
 
-# if str(SAM_PROJECT_ROOT) not in sys.path:
-#     sys.path.insert(0, str(SAM_PROJECT_ROOT))
-
-
-try:
-    # Importar ConfigManager y setup_logging desde common.utils
-    from .config_manager import ConfigManager
-    from .logging_setup import setup_logging
-except ImportError as e:
-    print("CRITICAL ERROR en SAM/common/utils/mail_client.py: No se pudieron importar módulos de 'common.utils'.", file=sys.stderr)
-    print(f"Error: {e}", file=sys.stderr)
-    print(f"sys.path actual: {sys.path}", file=sys.stderr)
-    sys.exit(1)  # Salir si no se pueden importar módulos críticos
-
-# --- Configurar el Logger para este módulo ---
-log_configuration_mail = ConfigManager.get_log_config()
-# logger = setup_logging(
-#     log_config=log_configuration_mail,
-#     logger_name=f"SAM.common.utils.mail_client",     # Nombre del logger simplificado
-# )
+# --- OBTENER EL LOGGER (Forma Estandarizada) ---
+# Simplemente obtenemos el logger para este módulo. La configuración
+# (handlers, level, etc.) ya fue establecida por el script de arranque.
 logger = logging.getLogger(__name__)
 
 
 class EmailAlertClient:
     def __init__(self, service_name: str = "SAM"):
         # ConfigManager se importa desde common.utils.config_manager
-        config = ConfigManager.get_email_config("EMAIL")  # Usar prefijo "EMAIL" o el que corresponda
+        config = ConfigManager.get_email_config()
 
         self.smtp_server = config["smtp_server"]
         self.smtp_port = config["smtp_port"]

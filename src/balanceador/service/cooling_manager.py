@@ -35,82 +35,32 @@ class CoolingManager:
         self.umbral_de_ampliacion = 0.3  # 30% más tickets justifica escalar
         self.umbral_de_reduccion = 0.4  # 40% menos tickets justifica desescalar
 
-    def puede_ampliarse(self, robot_id: int, current_tickets: int, current_equipos: int) -> Tuple[bool, str]:
-        """
-        Determina si un robot puede escalar hacia arriba (asignar más equipos).
-
-        Args: robot_id: ID del robot
-            current_tickets: Cantidad actual de tickets
-            current_equipos: Cantidad actual de equipos asignados
-
-        Returns: Tuple[bool, str]: (puede_escalar, justificación)
-        """
+    def puede_ampliar(self, robot_id: int) -> Tuple[bool, str]:
         with self._lock:
-            now: float = time.time()
-
-            # Si no hay equipos asignados y hay tickets, siempre permitir asignar al menos uno
-            if current_equipos == 0 and current_tickets > 0:
-                return True, "No hay equipos asignados y existen tickets pendientes"
-
-            # Verificar si está en período de enfriamiento tras una asignación reciente
-            if robot_id in self._ultima_ampliacion:
-                last_time, _, last_tickets = self._ultima_ampliacion[robot_id]
-                time_elapsed: float = now - last_time
-
-                if time_elapsed < self.cooling_period:
-                    # Verificar si el aumento de tickets justifica ignorar el enfriamiento
-                    if last_tickets > 0 and current_tickets / last_tickets >= (1 + self.umbral_de_ampliacion):
-                        return True, f"Aumento significativo de tickets ({last_tickets} -> {current_tickets})"
-
-                    return False, f"En período de enfriamiento tras asignación reciente ({int(time_elapsed)}s < {self.cooling_period}s)"
-
-            # Verificar si está en período de enfriamiento tras una desasignación reciente
-            if robot_id in self._ultima_reduccion:
-                last_time, _, _ = self._ultima_reduccion[robot_id]
-                time_elapsed = now - last_time
-
-                if time_elapsed < self.cooling_period:
-                    return False, f"En período de enfriamiento tras desasignación reciente ({int(time_elapsed)}s < {self.cooling_period}s)"
-
-            return True, "Fuera de período de enfriamiento"
-
-    def puede_reducirse(self, robot_id: int, current_tickets: int, current_equipos: int) -> Tuple[bool, str]:
-        """
-        Determina si un robot puede reducir la escala (desasignar equipos).
-
-        Args:
-            robot_id: ID del robot
-            current_tickets: Cantidad actual de tickets
-            current_equipos: Cantidad actual de equipos asignados
-
-        Returns: Tuple[bool, str]: (puede_desescalar, justificación)
-        """
-        with self._lock:
-            now = time.time()
-
-            # Si no hay tickets, siempre permitir desasignar
-            if current_tickets == 0:
-                return True, "No hay tickets pendientes"
-
-            # Verificar si está en período de enfriamiento tras una desasignación reciente
-            if robot_id in self._ultima_reduccion:
-                last_time, _, last_tickets = self._ultima_reduccion[robot_id]
-                time_elapsed: float = now - last_time
-
-                if time_elapsed < self.cooling_period:
-                    # Verificar si la disminución de tickets justifica ignorar el enfriamiento
-                    if last_tickets > 0 and current_tickets / last_tickets <= (1 - self.umbral_de_reduccion):
-                        return True, f"Disminución significativa de tickets ({last_tickets} -> {current_tickets})"
-
-                    return False, f"En período de enfriamiento tras desasignación reciente ({int(time_elapsed)}s < {self.cooling_period}s)"
-
-            # Verificar si está en período de enfriamiento tras una asignación reciente
             if robot_id in self._ultima_ampliacion:
                 last_time, _, _ = self._ultima_ampliacion[robot_id]
-                time_elapsed = now - last_time
-
+                time_elapsed = time.time() - last_time
                 if time_elapsed < self.cooling_period:
                     return False, f"En período de enfriamiento tras asignación reciente ({int(time_elapsed)}s < {self.cooling_period}s)"
+            return True, "Fuera de período de enfriamiento"
+
+    def puede_reducir(self, robot_id: int, tickets_actuales: int) -> Tuple[bool, str]:
+        """
+        Verifica si se puede desasignar un equipo a un robot.
+        """
+        with self._lock:
+            if robot_id in self._ultima_reduccion:
+                last_time, _, tickets_anteriores = self._ultima_reduccion[robot_id]
+                time_elapsed = time.time() - last_time
+
+                if time_elapsed < self.cooling_period:
+                    # Comprobar si la caída de tickets es drástica
+                    if tickets_anteriores > 0:
+                        cambio_porcentual = (tickets_anteriores - tickets_actuales) / tickets_anteriores
+                        if cambio_porcentual >= self.umbral_de_reduccion:
+                            return True, f"Enfriamiento ignorado por caída drástica de tickets ({cambio_porcentual:.0%})"
+
+                    return False, f"En período de enfriamiento tras desasignación reciente ({int(time_elapsed)}s < {self.cooling_period}s)"
 
             return True, "Fuera de período de enfriamiento"
 

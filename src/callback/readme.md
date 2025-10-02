@@ -6,32 +6,28 @@ Este servicio es un servidor backend WSGI diseñado para recibir notificaciones 
 
 ## **Características Principales**
 
-* **Servidor de Producción**: Utiliza **Waitress**, un servidor WSGI de alto rendimiento, cuando está disponible. Proporciona un fallback a wsgiref para desarrollo.  
-* **Seguridad Mejorada**: Requiere un token de autenticación a través del encabezado X-Authorization y utiliza una comparación segura (hmac.compare_digest) para prevenir ataques de temporización.  
-* **Código Limpio y Mantenible**: La lógica de negocio está claramente separada de la lógica del servidor. El código utiliza constantes y clases de configuración para evitar valores "mágicos".  
-* **Configuración Centralizada**: Toda la configuración se gestiona a través de un archivo .env en la raíz del proyecto, facilitando el despliegue en diferentes entornos.  
-* **Logging Robusto**: Genera logs detallados en archivos que rotan diariamente, utilizando un manejador de archivos robusto para evitar pérdidas de logs durante la rotación.  
-* **Manejo de Errores Estructurado**: Utiliza excepciones personalizadas para un control de flujo claro y respuestas de error predecibles y consistentes.  
-* **Parada Elegante (Graceful Shutdown)**: Captura señales del sistema (como Ctrl+C) para cerrar la conexión a la base de datos y registrar estadísticas finales antes de terminar.
+* **Servidor de Producción**: Utiliza **Waitress**, un servidor WSGI de alto rendimiento, cuando está disponible.  
+* **Seguridad Estricta**: **Requiere obligatoriamente** un token de autenticación a través del encabezado X-Authorization para cada petición. Utiliza una comparación segura (hmac.compare_digest) para prevenir ataques de temporización.  
+* **Código Limpio y Mantenible**: La lógica está claramente separada y se apoya en un gestor de configuración centralizado.  
+* **Logging Robusto**: Genera logs detallados en archivos que rotan diariamente para facilitar la auditoría y el diagnóstico de problemas.  
+* **Manejo de Errores Estructurado**: Proporciona respuestas de error consistentes y predecibles en formato JSON.
 
 ## **Instalación**
 
 1. Clona el repositorio.  
 2. Asegúrate de tener Python 3.8 o superior.  
-3. Se recomienda crear un entorno virtual:  
+3. Crea y activa un entorno virtual:  
    python -m venv venv  
-   source venv/bin/activate  # En Windows: venv\\Scripts\\activate
+   source venv/bin/activate  # En Windows: venv\Scripts\activate
 
-4. Instala las dependencias. Asumiendo que existe un archivo requirements.txt:  
+4. Instala las dependencias:  
    pip install -r requirements.txt
-
-   Dependencias clave: waitress, python-dotenv, pyodbc.
 
 ## **Configuración (.env)**
 
-Crea un archivo llamado .env en la **raíz del proyecto** (fuera de la carpeta src). Usa el siguiente ejemplo como plantilla.
+Crea un archivo .env en la **raíz del proyecto**.
 
-**Nota:** Los nombres de las variables son importantes y deben coincidir con los esperados por la aplicación.
+**Nota:** Para producción, es crucial definir CALLBACK_AUTH_MODE="strict" y un CALLBACK_TOKEN seguro.
 
 # .env.example
 
@@ -40,11 +36,16 @@ CALLBACK_SERVER_HOST=0.0.0.0
 CALLBACK_SERVER_PORT=8008  
 CALLBACK_SERVER_THREADS=10
 
-# --- Token de seguridad para A360 ---  
-# Este token debe ser enviado por A360 en el encabezado X-Authorization  
+# --- Seguridad (OBLIGATORIO EN PRODUCCIÓN) ---  
+# Define el modo de autenticación: "strict" o "optional".  
+# En modo "strict", todas las llamadas sin un token válido serán rechazadas.  
+CALLBACK_AUTH_MODE="strict"
+
+# Este token debe ser enviado por A360 en el encabezado X-Authorization.  
+# DEBE ser un valor secreto, largo y complejo.  
 CALLBACK_TOKEN="un-token-secreto-muy-largo-y-dificil-de-adivinar"
 
-# --- Configuración de la Base de Datos SAM (NOMBRES CORRECTOS) ---  
+# --- Configuración de la Base de Datos SAM ---  
 SQL_SAM_HOST=tu-servidor-sql.database.windows.net  
 SQL_SAM_DB_NAME=SAM_DATABASE  
 SQL_SAM_UID=tu_usuario  
@@ -57,24 +58,34 @@ LOG_LEVEL="INFO" # Opciones: DEBUG, INFO, WARNING, ERROR
 
 ## **Cómo Ejecutar el Servicio**
 
-Para iniciar el servidor, ejecuta el script run_callback.py desde la raíz del proyecto. El script se encargará de configurar el sys.path correctamente.
+Para iniciar el servidor, ejecuta el script run_callback.py desde la raíz del proyecto.
 
 python src/callback/run_callback.py
 
-El servidor imprimirá en la consola la dirección en la que está escuchando y el tipo de servidor que está utilizando (Waitress o wsgiref).
+El servidor imprimirá en la consola la dirección en la que está escuchando y el modo de autenticación activo.
 
 ## **Funcionamiento de la API**
 
 * **Endpoint**: POST /  
-* **Encabezado Requerido**: X-Authorization: <tu-token-secreto> 
-* **Cuerpo de la Solicitud (Request Body)**: Un objeto JSON con los siguientes campos:  
+* **Encabezado Requerido**: X-Authorization: \<tu-token-secreto\>  
+* **Cuerpo de la Solicitud (Request Body)**: Un objeto JSON con la siguiente estructura:  
   * deploymentId (string, **requerido**): El ID único de la ejecución.  
   * status (string, **requerido**): El estado final de la ejecución.  
-  * botOutput (object, **opcional**): Un diccionario con las variables de salida del bot.
+  * deviceId (string, *opcional*): El ID del dispositivo donde se ejecutó.  
+  * userId (string, *opcional*): El ID del usuario asociado a la ejecución.  
+  * botOutput (object, *opcional*): Un diccionario con las variables de salida del bot.
 
-**Ejemplo Mínimo Válido:**{  
-  "deploymentId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",  
-  "status": "COMPLETED"  
+**Ejemplo de Payload Válido:**
+
+{  
+  "deviceId": "44",  
+  "userId": "4934",  
+  "deploymentId": "dd694f01-f8a0-4470-9240-7d866465d981",  
+  "status": "RUN_COMPLETED",  
+  "botOutput": {  
+    "resultado": "exitoso",  
+    "archivo_generado": "reporte.xlsx"  
+  }  
 }
 
-* **Respuestas**: El servidor responderá con códigos de estado HTTP estándar (200, 400, 401, 405, 413, 500) y un cuerpo JSON que describe el resultado. Para más detalles, consulta el archivo swagger.yaml.
+* **Respuestas**: El servidor responderá con códigos de estado HTTP estándar (200, 401, 405, 500) y un cuerpo JSON que describe el resultado.
