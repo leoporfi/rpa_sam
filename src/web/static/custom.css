@@ -1,11 +1,78 @@
-.range {
-  display: "flex";
-  align-items: "center";
-  gap: "1rem";
+/* ==========================================================================
+   1. ESTILOS GLOBALES Y TIPOGRAFÍA
+   ========================================================================== */
+
+:root {
+  --pico-border-radius: 1rem;
+  --pico-typography-spacing-vertical: 1.5rem;
+  --pico-form-element-spacing-vertical: 1rem;
+  --pico-form-element-spacing-horizontal: 1.25rem;
+  --pico-font-size: 0.98rem;
 }
 
-/* --- ESTILO PARA TAGS/BADGES DE ESTADO --- */
+h1 {
+  --pico-font-family: Manrope, cursive;
+  --pico-font-weight: 400;
+  --pico-typography-spacing-vertical: 0.5rem;
+}
 
+button {
+  --pico-font-weight: 700;
+}
+
+a {
+  --pico-text-decoration: none;
+}
+
+table thead th a:hover {
+  --pico-text-decoration: none;
+}
+
+
+/* ==========================================================================
+   2. LAYOUT PRINCIPAL
+   ========================================================================== */
+
+.sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background-color: var(--pico-background-color);
+  border-bottom: 1px solid var(--pico-card-border-color);
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+main.container {
+    padding-top: var(--pico-typography-spacing-vertical);
+}
+
+
+/* ==========================================================================
+   3. COMPONENTES
+   ========================================================================== */
+
+/* --- Interruptor de Tema (Theme Switcher) --- */
+.theme-switcher {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+/* --- Botón "Ghost" Secundario --- */
+.secondary-ghost {
+  --pico-color: var(--pico-primary);
+  --pico-background-color: var(--pico-primary-background);
+  --pico-border-color: transparent;
+  --pico-box-shadow: none;
+}
+
+.secondary-ghost:hover {
+  --pico-background-color: var(--pico-primary-hover-background);
+}
+
+/* --- Tags/Badges de Estado --- */
 .tag {
   display: inline-block;
   padding: 0.25rem 0.65rem;
@@ -18,25 +85,23 @@
   border-radius: var(--pico-border-radius);
 }
 
-/* Estado Dinámico (Verde) */
 .tag-dinamico {
-  color: #198754; /* Un verde oscuro y legible */
+  color: #198754;
   background-color: rgba(40, 167, 69, 0.2);
 }
 
-/* Estado Programado (Azul) */
 .tag-programado {
-  color: #0d6efd; /* Azul primario */
+  color: #0d6efd;
   background-color: rgba(13, 110, 253, 0.2);
 }
 
-/* Estado Reservado (Naranja) */
 .tag-reservado {
-  color: #fd7e14; /* Naranja */
+  color: #fd7e14;
   background-color: rgba(253, 126, 20, 0.2);
 }
 
-/* Contenedor principal de notificaciones */
+
+/* --- Notificaciones (Toasts) --- */
 .toast-container {
   position: fixed;
   top: 1rem;
@@ -46,14 +111,12 @@
   max-width: calc(100vw - 2rem);
 }
 
-/* Stack de notificaciones con espaciado */
 .toast-stack {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
 }
 
-/* Estilos base para todas las notificaciones */
 .toast {
   position: relative;
   padding: 1rem;
@@ -65,19 +128,6 @@
   transition: all 0.3s ease;
 }
 
-/* Animación de entrada */
-@keyframes slideIn {
-  from {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-
-/* Contenido interno del toast */
 .toast-content {
   display: flex;
   align-items: flex-start;
@@ -85,7 +135,6 @@
   gap: 0.75rem;
 }
 
-/* Contenedor del mensaje */
 .toast-message {
   display: flex;
   align-items: center;
@@ -93,7 +142,6 @@
   flex: 1;
 }
 
-/* Icono del toast */
 .toast-icon {
   font-size: 1.125rem;
   font-weight: bold;
@@ -101,14 +149,12 @@
   flex-shrink: 0;
 }
 
-/* Texto del mensaje */
 .toast-text {
   font-size: 0.875rem;
   line-height: 1.4;
   color: var(--pico-color);
 }
 
-/* Botón de cierre */
 .toast-close {
   background: none;
   border: none;
@@ -127,86 +173,116 @@
   color: var(--pico-contrast-hover);
 }
 
-/* --- ESTILOS POR TIPO DE NOTIFICACIÓN --- */
-
-/* Notificación de éxito */
+/* Estilos por tipo de notificación */
 .toast-success {
   border-left: 4px solid #28a745;
   background-color: rgba(40, 167, 69, 0.1);
 }
+.toast-success .toast-icon { color: #28a745; }
 
-.toast-success .toast-icon {
-  color: #28a745;
-}
-
-/* Notificación de error */
 .toast-error {
   border-left: 4px solid #dc3545;
   background-color: rgba(220, 53, 69, 0.1);
 }
+.toast-error .toast-icon { color: #dc3545; }
 
-.toast-error .toast-icon {
-  color: #dc3545;
-}
-
-/* Notificación de advertencia */
 .toast-warning {
   border-left: 4px solid #ffc107;
   background-color: rgba(255, 193, 7, 0.1);
 }
+.toast-warning .toast-icon { color: #f57c00; }
 
-.toast-warning .toast-icon {
-  color: #f57c00;
-}
-
-/* Notificación informativa */
 .toast-info {
   border-left: 4px solid #007bff;
   background-color: rgba(0, 123, 255, 0.1);
 }
+.toast-info .toast-icon { color: #007bff; }
 
-.toast-info .toast-icon {
-  color: #007bff;
-}
-
-/* Tema oscuro - ajustes automáticos */
+/* Tema oscuro - ajustes de notificaciones */
 [data-theme="dark"] .toast-success {
   border-left-color: #5cb85c;
   background-color: rgba(92, 184, 92, 0.15);
 }
-
-[data-theme="dark"] .toast-success .toast-icon {
-  color: #5cb85c;
-}
+[data-theme="dark"] .toast-success .toast-icon { color: #5cb85c; }
 
 [data-theme="dark"] .toast-error {
   border-left-color: #d9534f;
   background-color: rgba(217, 83, 79, 0.15);
 }
-
-[data-theme="dark"] .toast-error .toast-icon {
-  color: #d9534f;
-}
+[data-theme="dark"] .toast-error .toast-icon { color: #d9534f; }
 
 [data-theme="dark"] .toast-warning {
   border-left-color: #f0ad4e;
   background-color: rgba(240, 173, 78, 0.15);
 }
-
-[data-theme="dark"] .toast-warning .toast-icon {
-  color: #f0ad4e;
-}
+[data-theme="dark"] .toast-warning .toast-icon { color: #f0ad4e; }
 
 [data-theme="dark"] .toast-info {
   border-left-color: #5bc0de;
   background-color: rgba(91, 192, 222, 0.15);
 }
+[data-theme="dark"] .toast-info .toast-icon { color: #5bc0de; }
 
-[data-theme="dark"] .toast-info .toast-icon {
-  color: #5bc0de;
+/* <<-- NUEVO: Regla para asegurar que los modales estén por encima de todo -->> */
+dialog[open] {
+  z-index: 1100;
 }
 
-/* Responsive para móviles */
+
+/* ==========================================================================
+   4. AJUSTES DE UI (Tablas, Formularios, etc.)
+   ========================================================================== */
+
+/* --- Controles de Rango (Sliders) --- */
+.range {
+  display: "flex";
+  align-items: "center";
+  gap: "1rem";
+}
+
+/* --- Ajustes de Tabla --- */
+.table-container {
+  overflow: auto;
+}
+
+table td,
+table th {
+  --pico-table-cell-padding: 0.5rem 1rem;
+}
+
+table td fieldset {
+  margin-bottom: 0;
+}
+
+/* --- Ajustes de Botones Compactos --- */
+button,
+details summary {
+  --pico-font-size: 0.75rem;
+  --pico-form-element-padding-vertical: 0.5rem;
+  --pico-form-element-padding-horizontal: 0.5rem;
+}
+
+button i.fa-solid {
+  font-size: 0.8rem;
+  margin-right: 0.35rem;
+}
+
+
+/* ==========================================================================
+   5. ANIMACIONES Y RESPONSIVIDAD
+   ========================================================================== */
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
 @media (max-width: 768px) {
   .toast-container {
     top: 0.75rem;
@@ -224,72 +300,3 @@
   }
 }
 
-/* Tabla responsiba*/
-.table-container {
-  overflow: auto;
-}
-
-/*  tipogracias y estilo nuevo */
-:root {
-  --pico-border-radius: 1rem;
-  --pico-typography-spacing-vertical: 1.5rem;
-  --pico-form-element-spacing-vertical: 1rem;
-  --pico-form-element-spacing-horizontal: 1.25rem;
-  --pico-font-size: 0.98rem;
-}
-
-h1 {
-  --pico-font-family: Pacifico, cursive;
-  --pico-font-weight: 400;
-  --pico-typography-spacing-vertical: 0.5rem;
-}
-
-button {
-  --pico-font-weight: 700;
-}
-
-a {
-  --pico-text-decoration: none;
-}
-
-table thead th a:hover {
-  --pico-text-decoration: none;
-}
-
-/* --- AJUSTE PARA REDUCIR ALTURA DE FILAS DE LA TABLA --- */
-
-/* 1. Reduce el padding vertical de TODAS las celdas de la tabla */
-table td,
-table th {
-  --pico-table-cell-padding: 0.5rem 1rem; /* Reducimos de 0.75rem a 0.5rem arriba y abajo */
-}
-
-/* 2. Elimina el margen inferior de los fieldset dentro de la tabla */
-/* Esto compacta los interruptores "Activo" y "Online" verticalmente. */
-table td fieldset {
-  margin-bottom: 0;
-}
-
-/* --- AJUSTE PARA BOTONES MÁS PEQUEÑOS Y COMPACTOS --- */
-
-/* Esta regla se aplica a todos los botones y al menú de acciones */
-button,
-details summary {
-  /* Reduce el tamaño del texto (por defecto es 1rem) */
-  --pico-font-size: 0.75rem;
-  /* Reduce la altura (por defecto es 0.75rem) */
-  --pico-form-element-padding-vertical: 0.5rem;
-  /* Puedes ajustar el ancho si lo deseas */
-  --pico-form-element-padding-horizontal: 0.5rem;
-}
-
-/* Ajusta el tamaño de los iconos dentro de los botones */
-button i.fa-solid {
-  /* Un poco más pequeño que el texto del botón */
-  font-size: 0.8rem;
-  /* Ajusta el espacio entre el ícono y el texto */
-  margin-right: 0.35rem;
-}
-
-
-/* --- ESTILO PARA TAGS/BADGES DE ESTADO --- */

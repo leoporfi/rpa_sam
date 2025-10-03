@@ -21,19 +21,16 @@ def Pagination(current_page: int, total_pages: int, on_page_change: Callable):
 
     return html.nav(
         {"className": "grid"},
-        # Botón Anterior (a la izquierda)
         html.div(
             html.button(
                 {"className": "secondary", "onClick": handle_previous, "disabled": is_first_page},
                 "Anterior",
             )
         ),
-        # Contador de Página (centrado)
         html.div(
             {"style": {"textAlign": "center", "lineHeight": "2.5rem"}},
             f"Página {current_page} de {total_pages}",
         ),
-        # Botón Siguiente (a la derecha)
         html.div(
             {"style": {"textAlign": "right"}},
             html.button(
@@ -53,7 +50,6 @@ def LoadingSpinner():
         {"className": "container", "style": {"textAlign": "center", "padding": "2rem"}},
         html.article(
             {"aria-busy": "true"},
-            # El texto dentro del elemento se muestra mientras carga
             "Cargando datos...",
         ),
     )
@@ -63,17 +59,12 @@ def LoadingSpinner():
 def ActionMenu(actions: List[Dict[str, any]]):
     """
     Menú desplegable de acciones que usa la estructura <details> de Pico.css.
-    Es semántico y no necesita estado para funcionar.
     """
     return html.details(
-        # La clase 'dropdown' le da el estilo y posicionamiento correcto.
         {"className": "dropdown"},
-        # Esto es lo que se ve siempre: el icono de 3 puntos.
         html.summary(
             {"role": "", "className": "outline"},
-            # html.i({"className": "fas fa-ellipsis-v"}),
         ),
-        # Esto es lo que se despliega.
         html.ul(
             {"role": "listbox"},
             *[
@@ -87,17 +78,25 @@ def ActionMenu(actions: List[Dict[str, any]]):
 @component
 def ThemeSwitcher(is_dark: bool, on_toggle: Callable):
     """
-    Un interruptor para cambiar entre el tema claro y oscuro.
+    Un interruptor para cambiar entre tema claro y oscuro, con iconos de sol y luna.
     """
 
     def handle_change(event):
         on_toggle(event["target"]["checked"])
 
-    return html.fieldset(
-        html.label(
-            html.input({"type": "checkbox", "role": "switch", "checked": is_dark, "onChange": handle_change}),
-            "Tema Oscuro" if is_dark else "Tema Claro",
-        )
+    return html.label(
+        {"htmlFor": "theme-switcher", "className": "theme-switcher"},
+        html.span({"className": "material-symbols-outlined"}, "light_mode"),
+        html.input(
+            {
+                "type": "checkbox",
+                "id": "theme-switcher",
+                "role": "switch",
+                "checked": is_dark,
+                "onChange": handle_change,
+            }
+        ),
+        html.span({"className": "material-symbols-outlined"}, "dark_mode"),
     )
 
 
@@ -107,7 +106,6 @@ def ConfirmationModal(is_open: bool, title: str, message: str, on_confirm: Calla
     if not is_open:
         return None
 
-    # Envolvemos la llamada asíncrona en un manejador
     async def handle_confirm_click(event):
         await on_confirm()
 
@@ -123,10 +121,8 @@ def ConfirmationModal(is_open: bool, title: str, message: str, on_confirm: Calla
                 html.div(
                     {"className": "grid"},
                     html.button({"className": "secondary", "onClick": lambda e: on_cancel()}, "Cancelar"),
-                    # Usamos un botón con un color que indique peligro/acción destructiva
                     html.button(
                         {
-                            # "className": "pico-color-red-550",
                             "onClick": handle_confirm_click,
                             "style": {"backgroundColor": "var(--pico-color-pink-550)", "borderColor": "var(--pico-color-pink-550)"},
                         },
