@@ -1,0 +1,325 @@
+{
+  "projectMetadata": {
+    "projectName": "SAM - Servicio Web de Gestión y Orquestación RPA",
+    "documentVersion": "1.4",
+    "description": "Especificaciones técnicas completas para el desarrollo del servicio web de gestión de SAM. Este documento detalla la arquitectura, modelo de datos, funcionalidades, reglas de negocio y APIs necesarias para el proyecto. Está diseñado para ser interpretado tanto por desarrolladores humanos como por asistentes de IA.",
+    "projectOwner": "Administrador RPA",
+    "techStack": {
+      "backend": "FastAPI",
+      "frontend": "Reactpy",
+      "database": "SQL Server"
+    }
+  },
+  "architectureAndComponents": {
+    "summary": "El ecosistema SAM se compone de varios microservicios que interactúan con una base de datos central. El servicio web actúa como la interfaz de usuario para la configuración y monitorización manual, mientras que otros servicios (Balanceador, Lanzador) operan de forma autónoma.",
+    "components": [
+      {
+        "name": "Servicio Web (Este Proyecto)",
+        "description": "Interfaz de usuario (Reactpy) y API REST (FastAPI) para que los administradores gestionen la configuración de robots, equipos, pools y programaciones."
+      },
+      {
+        "name": "Base de Datos SAM",
+        "description": "Base de datos SQL Server que centraliza toda la configuración y el estado operativo del sistema."
+      },
+      {
+        "name": "Control Room AA360",
+        "description": "Plataforma de Automation Anywhere A360. Es la fuente de verdad para la lista de robots y su estado. El servicio web se sincroniza con ella."
+      },
+      {
+        "name": "Servicio Balanceador",
+        "description": "Servicio autónomo que asigna y desasigna dinámicamente equipos a los robots basándose en la carga de trabajo y las reglas definidas."
+      }
+    ]
+  },
+  "dataModel": {
+    "summary": "El modelo de datos se basa en el script SAM.sql y los esquemas de Pydantic. Las entidades principales son Robots, Equipos, Pools y Schedules.",
+    "entities": [
+      {
+        "name": "Robot",
+        "fields": ["IdRobot", "Nombre", "IdA360", "Activo", "EsOnline", "EsProgramado", "MinEquipos", "MaxEquipos", "IdPool"]
+      },
+      {
+        "name": "Equipo",
+        "fields": ["IdEquipo", "Nombre", "IdA360", "Activo", "Reservado", "IdPool"]
+      },
+      {
+        "name": "Pool",
+        "fields": ["IdPool", "Nombre", "Descripcion"]
+      },
+      {
+        "name": "Schedule (Programacion)",
+        "fields": ["ProgramacionId", "RobotId", "TipoProgramacion", "HoraInicio", "Tolerancia", "DiasSemana", "DiaDelMes", "FechaEspecifica", "Activo"],
+        "notes": "Representa una programación. El backend maneja la lógica de recurrencia basada en los campos."
+      },
+      {
+        "name": "Asignacion",
+        "fields": ["IdAsignacion", "IdRobot", "IdEquipo", "FechaAsignacion", "TipoAsignacion ('MANUAL', 'BALANCEADOR', 'PROGRAMADO')"]
+      },
+      {
+        "name": "Historico",
+        "fields": ["IdHistorico", "Fecha", "Componente", "Accion", "Mensaje", "Nivel"]
+      }
+    ]
+  },
+  "functionalities": [
+    {
+      "module": "Sincronización con AA360",
+      "description": "Mantener la base de datos de SAM actualizada con la información del Control Room.",
+      "userStories": [
+        "**Como** administrador, **quiero** poder forzar una sincronización manual desde la web **para** reflejar inmediatamente los cambios hechos en AA360.",
+        "**Como** sistema, **quiero** realizar una sincronización automática periódica **para** asegurar que los datos de robots y equipos no queden obsoletos."
+      ]
+    },
+    {
+      "module": "Gestión de Robots y Equipos",
+      "description": "Visualizar y gestionar la relación entre robots y los equipos (VMs) que tienen asignados.",
+      "userStories": [
+        "**Como** administrador, **quiero** ver una lista de todos los robots, con sus atributos principales (nombre, estado, pool) y la cantidad de equipos asignados.",
+        "**Como** administrador, **quiero** poder buscar y filtrar la lista de robots **para** encontrar rápidamente el que necesito gestionar.",
+        "**Como** administrador, **quiero** poder asignar y desasignar manualmente uno o varios equipos a un robot específico **para** prepararlo para una tarea concreta."
+      ]
+    },
+    {
+      "module": "Gestión de Pools",
+      "description": "Crear, editar y eliminar pools de recursos para agrupar lógicamente robots y equipos.",
+      "userStories": [
+        "**Como** administrador, **quiero** poder crear un nuevo pool con un nombre y descripción.",
+        "**Como** administrador, **quiero** poder editar el nombre y la descripción de un pool existente.",
+        "**Como** administrador, **quiero** poder eliminar un pool (siempre que no tenga recursos asignados).",
+        "**Como** administrador, **quiero** poder asignar y desasignar robots y equipos a un pool **para** definir su membresía."
+      ]
+    },
+    {
+      "module": "Gestión de Programaciones (Schedules)",
+      "description": "Crear, editar y eliminar programaciones para la ejecución de robots.",
+      "userStories": [
+        "**Como** administrador, **quiero** poder crear una programación para un robot específico, definiendo el tipo (diaria, semanal, por única vez), fechas y horas.",
+        "**Como** administrador, **quiero** poder asignar equipos específicos a esa programación **para** asegurar que los recursos estén disponibles durante la ejecución.",
+        "**Como** administrador, **quiero** poder ver una lista de todas las programaciones activas.",
+        "**Como** administrador, **quiero** poder editar o eliminar una programación existente."
+      ]
+    }
+  ],
+  "businessRules": [
+    {
+      "ruleId": "BR-01",
+      "description": "No es posible programar un robot que es 'Online'",
+      "implementation": "En la UI, el selector de robots para crear una programación debe deshabilitar o filtrar aquellos donde `Robot.EsOnline = 1`. En el backend, la API de creación de schedules debe retornar un error 409 (Conflict) si se intenta programar un robot con `EsOnline = 1`."
+    },
+    {
+      "ruleId": "BR-02",
+      "description": "La asignación de un equipo a un robot programado debe marcar el robot como 'No Online' y 'Programado'",
+      "implementation": "Al guardar una programación que asigna un equipo a un robot, la lógica de negocio debe ejecutar las siguientes actualizaciones en la BD: `UPDATE Robot SET EsOnline = 0, EsProgramado = 1 WHERE IdRobot = ?` y `UPDATE Equipo SET EsProgramado = 1 WHERE IdEquipo IN (...)`. Esto lo aísla de la gestión del Balanceador."
+    },
+    {
+      "ruleId": "BR-03",
+      "description": "La asignación manual de equipos debe marcar el equipo como 'Reservado'",
+      "implementation": "Cuando un usuario asigna un equipo a un robot desde la interfaz web, la API debe marcar ese equipo con `Reservado = 1`. Esto lo diferencia de las asignaciones dinámicas del Balanceador (`Reservado = 0`)."
+    },
+    {
+      "ruleId": "BR-04",
+      "description": "Solicitar confirmación antes de acciones destructivas",
+      "implementation": "La interfaz de usuario debe mostrar un modal de confirmación ('¿Está seguro?') antes de ejecutar las siguientes acciones: Desasignar un equipo, Eliminar un Pool, Modificar la asignación de recursos de un Pool, Eliminar una Programación."
+    }
+  ],
+  "apiEndpoints": [
+    {
+      "endpoint": "POST /api/sync",
+      "method": "POST",
+      "description": "Inicia un proceso de sincronización manual con AA360.",
+      "response": "202 Accepted - Proceso iniciado."
+    },
+    {
+      "endpoint": "GET /api/robots",
+      "method": "GET",
+      "description": "Obtiene la lista de robots, permite filtrado por nombre y estado.",
+      "response": "200 OK - Lista de objetos Robot."
+    },
+    {
+        "endpoint": "PUT /api/robots/{robot_id}/asignaciones",
+        "method": "PUT",
+        "description": "Actualiza los equipos asignados a un robot manualmente (Implementa BR-03).",
+        "body": {
+          "schema": "AssignmentUpdateRequest",
+          "example": "{ \"asignar_equipo_ids\": [101, 102], \"desasignar_equipo_ids\": [103] }"
+        },
+        "response": "200 OK - Asignación exitosa."
+    },
+    {
+      "endpoint": "GET /api/pools",
+      "method": "GET",
+      "description": "Obtiene la lista de todos los pools.",
+      "response": "200 OK - Lista de objetos Pool."
+    },
+    {
+      "endpoint": "POST /api/pools",
+      "method": "POST",
+      "description": "Crea un nuevo pool.",
+      "body": "{ \"nombre\": \"...\", \"descripcion\": \"...\" }",
+      "response": "201 Created - Pool creado."
+    },
+    {
+      "endpoint": "DELETE /api/pools/{pool_id}",
+      "method": "DELETE",
+      "description": "Elimina un pool.",
+      "response": "204 No Content - Pool eliminado."
+    },
+    {
+        "endpoint": "PUT /api/pools/{pool_id}/asignaciones",
+        "method": "PUT",
+        "description": "Actualiza los robots y equipos asignados a un pool.",
+        "body": {
+          "schema": "PoolAssignmentsRequest",
+          "example": "{ \"robot_ids\": [1, 2], \"equipo_ids\": [101, 102] }"
+        },
+        "response": "200 OK - Asignaciones actualizadas."
+    },
+    {
+      "endpoint": "GET /api/schedules",
+      "method": "GET",
+      "description": "Obtiene la lista de todas las programaciones.",
+      "response": "200 OK - Lista de Schedules."
+    },
+    {
+      "endpoint": "POST /api/schedules",
+      "method": "POST",
+      "description": "Crea una nueva programación (Implementa BR-01 y BR-02).",
+      "body": {
+        "schema": "ScheduleData",
+        "example": {
+          "RobotId": 1,
+          "TipoProgramacion": "DIARIA",
+          "HoraInicio": "09:00",
+          "Tolerancia": 15,
+          "Equipos": [101, 102],
+          "DiasSemana": "Lu,Ma,Mi,Ju,Vi",
+          "DiaDelMes": null,
+          "FechaEspecifica": null
+        }
+      },
+      "response": "201 Created - Programación creada."
+    },
+    {
+      "endpoint": "PUT /api/schedules/{schedule_id}",
+      "method": "PUT",
+      "description": "Actualiza una programación existente.",
+      "body": {
+        "schema": "ScheduleData",
+        "example": "Ver ejemplo en POST /api/schedules"
+      },
+      "response": "200 OK - Programación actualizada."
+    },
+    {
+      "endpoint": "DELETE /api/schedules/{schedule_id}",
+      "method": "DELETE",
+      "description": "Elimina una programación.",
+      "response": "204 No Content - Programación eliminada."
+    }
+  ],
+  "gherkinScenariosExpanded": [
+    {
+      "feature": "Gestión de Programaciones (Schedules)",
+      "scenarios": [
+        {
+          "name": "Crear una programación exitosamente",
+          "steps": [
+            "Given el administrador está en la sección 'Programaciones'",
+            "And el robot 'Robot_Facturas' tiene el atributo EsOnline = 0",
+            "When el administrador crea una nueva programación para 'Robot_Facturas' asignando el 'Equipo_VM_01'",
+            "Then la API POST /api/schedules es llamada con los datos de la programación",
+            "And la base de datos refleja que 'Robot_Facturas' tiene EsOnline = 0 y EsProgramado = 1",
+            "And el 'Equipo_VM_01' es marcado como no disponible para el balanceador."
+          ]
+        },
+        {
+          "name": "Fallar al intentar programar un robot 'Online'",
+          "steps": [
+            "Given el administrador está en la sección 'Programaciones'",
+            "And el robot 'Robot_Consultas' tiene el atributo EsOnline = 1",
+            "When el administrador intenta seleccionar 'Robot_Consultas' para una nueva programación",
+            "Then el robot 'Robot_Consultas' aparece deshabilitado en la lista con un tooltip explicando la razón (BR-01)",
+            "And si se intenta forzar vía API, el endpoint POST /api/schedules debe devolver un error 409."
+          ]
+        },
+        {
+            "name": "Confirmar antes de eliminar un Pool",
+            "steps": [
+              "Given el administrador está en la sección 'Pools'",
+              "When el administrador hace clic en el botón 'Eliminar' del 'Pool de Contabilidad'",
+              "Then se muestra un modal de confirmación con el texto '¿Está seguro de que desea eliminar este pool?' (BR-04)",
+              "And el administrador hace clic en 'Confirmar'",
+              "Then se envía una petición DELETE a /api/pools/{id_pool}",
+              "And la tabla de pools se refresca sin el 'Pool de Contabilidad'."
+            ]
+        }
+      ]
+    }
+  ],
+  "dashboardAndMetrics": {
+    "dashboardName": "Dashboard de Performance del Balanceador",
+    "description": "Un panel de control para monitorizar la eficiencia y el comportamiento del servicio Balanceador a lo largo del tiempo.",
+    "kpis": [
+      {
+        "metric": "Tasa de Utilización de VMs",
+        "visualization": "Gráfico de área",
+        "details": "Porcentaje de equipos asignados (manual, balanceador, programado) vs. total de equipos disponibles a lo largo del tiempo."
+      },
+      {
+        "metric": "Decisiones del Balanceador (Últimas 24h)",
+        "visualization": "Gráfico de dona",
+        "details": "Distribución de las acciones tomadas: ASIGNAR_CARGA, DESASIGNAR_EXCEDENTE, MANTENER_ESTADO."
+      },
+      {
+        "metric": "Tiempo Promedio de Asignación",
+        "visualization": "Tarjeta con número",
+        "details": "Tiempo medio que transcurre desde que un robot tiene tickets pendientes hasta que el balanceador le asigna un nuevo recurso."
+      },
+      {
+        "metric": "Robots Bloqueados",
+        "visualization": "Tabla",
+        "details": "Lista de robots que requieren equipos por carga de trabajo pero no pueden ser asignados por falta de recursos en su pool (conflictos)."
+      },
+      {
+        "metric": "Historial de Asignaciones (Manual vs. Automática)",
+        "visualization": "Gráfico de barras apiladas",
+        "details": "Comparativa del número de asignaciones realizadas manualmente por administradores vs. las realizadas automáticamente por el Balanceador."
+      }
+    ]
+  },
+  "technicalConsiderationsAndImprovements": [
+    {
+      "area": "Logs y Auditoría",
+      "suggestion": "Asegurar que todas las operaciones CRUD realizadas desde la interfaz web (crear pool, asignar equipo, crear schedule) generen un registro en la tabla `Historico` con el componente 'ServicioWeb' y el usuario que realizó la acción (si se implementa autenticación)."
+    },
+    {
+      "area": "Notificaciones",
+      "suggestion": "Implementar notificaciones en tiempo real en la UI (ej. usando WebSockets o Server-Sent Events) para alertar al administrador cuando el Balanceador tome una decisión importante, como la asignación de un recurso crítico o la detección de un conflicto de recursos."
+    },
+    {
+      "area": "Manejo de Concurrencia",
+      "suggestion": "Implementar un mecanismo de bloqueo optimista o pesimista al editar entidades críticas (como la asignación de recursos a un pool) para evitar que dos administradores realicen cambios conflictivos al mismo tiempo."
+    },
+    {
+        "area": "Validaciones Preventivas",
+        "suggestion": "La UI debe prevenir acciones inválidas antes de llamar a la API. Por ejemplo, el botón 'Guardar' para un nuevo pool debe estar deshabilitado hasta que el campo 'nombre' sea válido."
+    }
+  ],
+  "promptsForAI": {
+    "summary": "Instrucciones para un asistente de IA para acelerar el desarrollo.",
+    "prompts": [
+      {
+        "task": "Crear un nuevo endpoint en FastAPI",
+        "prompt": "Basado en la sección 'apiEndpoints' del documento de especificaciones, genera el código Python para el endpoint '{endpoint_path}' con el método '{method}'. Utiliza el esquema Pydantic '{schema}' para el cuerpo de la petición. Implementa la lógica de negocio descrita en la regla '{ruleId}' si aplica. La conexión a la base de datos se debe realizar a un SQL Server usando pyodbc. Sigue las guías de estilo del archivo 'Guia de Arquitectura y Desarrollo.json'."
+      },
+      {
+        "task": "Crear un nuevo componente Reactpy",
+        "prompt": "Necesito un componente de Reactpy para gestionar el módulo de 'Gestión de Programaciones (Schedules)'. Debe incluir una tabla para listar las programaciones existentes (GET /api/schedules) y un modal con un formulario para crear/editar una programación. El formulario debe implementar el modelo 'ScheduleData', incluyendo un selector de robots (filtrando por BR-01), un selector de equipos, un dropdown para 'TipoProgramacion' que muestre condicionalmente los campos para 'DiasSemana', 'DiaDelMes' o 'FechaEspecifica', y campos para 'HoraInicio' y 'Tolerancia'. Las llamadas a la API deben usar el 'api_client' existente."
+      },
+      {
+        "task": "Escribir pruebas para un escenario Gherkin",
+        "prompt": "Toma el escenario '{scenario_name}' de la sección 'gherkinScenariosExpanded'. Escribe un test de integración usando pytest y pytest-bdd para verificar este comportamiento. Mockea las llamadas a la API de AA360 y la base de datos (SQL Server) según sea necesario."
+      }
+    ]
+  }
+}
+

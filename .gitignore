@@ -1,39 +1,95 @@
-# Entorno
+# =======================================
+# ENTORNOS Y CONFIGURACIÓN
+# =======================================
 .env
-*.pyc
-__pycache__/
+.env.*
+!.env.example
 .venv/
+venv/
+ENV/
+env/
 
-# Logs
+# =======================================
+# COMPILADOS DE PYTHON
+# =======================================
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.so
+*.dll
+
+# =======================================
+# LOGS Y ARCHIVOS TEMPORALES
+# =======================================
 logs/
 *.log
+*.tmp
+*.bak
+*.swp
+*.swo
 
-# IDEs
+# =======================================
+# IDEs / EDITORES
+# =======================================
 .vscode/
 .idea/
+*.iml
 
-# Distribución
+# =======================================
+# DISTRIBUCIÓN Y COMPILACIÓN
+# =======================================
 dist/
 build/
 *.egg-info/
 
-# Otros
+# =======================================
+# SISTEMAS OPERATIVOS
+# =======================================
 .DS_Store
+Thumbs.db
+
+# =======================================
+# DEPENDENCIAS EXTERNAS
+# =======================================
+node_modules/
+
+# =======================================
+# TESTS (ignorar resultados, no el código)
+# =======================================
+# Ignora resultados o artefactos de pruebas,
+# pero no ignores la carpeta tests/ completa
+.pytest_cache/
+.tox/
+.coverage
+htmlcov/
+
+# =======================================
+# ARCHIVOS PROPIOS DEL PROYECTO
+# =======================================
+# El archivo de lock de uv:
+# - Versiona si es APP
+# - Ignora si es LIBRERÍA
+#uv.lock
+
+# Archivos varios
 *copy*
 *copia*
-node_modules/
-tests/*
-test_*
 *_old
-# Archivos temporales
-*.tmp
+.env.bak
+
+# =======================================
+# ARCHIVOS EXPORTADOS / GENERADOS
+# =======================================
 *.zip
 *.pdf
 *.html
-uv.lock
-.env.bak
 *.csv
 *.png
 *.svg
+
+# =======================================
+# ARCHIVOS INTERNOS DEL PROYECTO
+# =======================================
 generate_keys.py
 migra.md

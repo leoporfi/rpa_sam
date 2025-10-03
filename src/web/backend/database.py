@@ -391,13 +391,13 @@ def get_pool_assignments_and_available_resources(db: DatabaseConnector, pool_id:
         raise e
 
 
-def assign_resources_to_pool(db: DatabaseConnector, pool_id: int, robot_ids: List[int], team_ids: List[int]):
+def assign_resources_to_pool(db: DatabaseConnector, pool_id: int, robot_ids: List[int], equipo_ids: List[int]):
     """
     Llama al SP para asignar recursos a un pool usando TVPs.
     """
     # pyodbc espera una lista de tuplas para los TVP
     robots_tvp = [(robot_id,) for robot_id in robot_ids]
-    equipos_tvp = [(team_id,) for team_id in team_ids]
+    equipos_tvp = [(equipo_ids,) for equipo_ids in equipo_ids]
 
     sql = "EXEC dbo.AsignarRecursosAPool @PoolId = ?, @RobotIds = ?, @EquipoIds = ?"
     params = (pool_id, robots_tvp, equipos_tvp)

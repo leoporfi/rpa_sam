@@ -1,0 +1,142 @@
+{
+  "meta": {
+    "projectName": "SAM (Sistema Automático de Robots)",
+    "documentVersion": "1.0",
+    "description": "Define las reglas de arquitectura, diseño, estilo y buenas prácticas para el desarrollo y mantenimiento del proyecto SAM. Está diseñado para ser interpretado tanto por desarrolladores humanos como por asistentes de IA.",
+    "promptForAI": "Al crear un nuevo servicio o refactorizar uno existente en el proyecto SAM, sigue estrictamente las reglas y patrones definidos en este documento para garantizar la consistencia, robustez y mantenibilidad del ecosistema."
+  },
+  "architecturalPrinciples": [
+    {
+      "principleTitle": "Estructura y Arranque de Servicios",
+      "principleDescription": "Todos los servicios deben seguir una estructura de directorios y un ciclo de vida de arranque estandarizados para garantizar la previsibilidad y la correcta inicialización de los componentes.",
+      "guidelines": [
+        {
+          "guidelineTitle": "Estructura de Directorios",
+          "details": [
+            {
+              "concept": "Aislamiento de Servicios",
+              "explanation": "Cada servicio (Lanzador, Balanceador, Callback, Interfaz_web) debe residir en su propio directorio dentro de `src/`. Por ejemplo: `src/lanzador/`.",
+              "rationale": "Mantiene el código de cada servicio aislado y cohesivo, evitando dependencias cruzadas no deseadas."
+            },
+            {
+              "concept": "Módulos Comunes",
+              "explanation": "Toda la lógica compartida (conectores de BD, clientes API, utilidades de configuración y logging) debe residir en `src/common/`. Los servicios importan desde esta ubicación.",
+              "rationale": "Promueve la reutilización de código (DRY - Don't Repeat Yourself) y asegura que todos los servicios usen las mismas implementaciones para tareas comunes."
+            }
+          ]
+        },
+        {
+          "guidelineTitle": "Punto de Entrada del Servicio (`run_*.py`)",
+          "details": [
+            {
+              "concept": "Rol de 'Fábrica' y Orquestador de Arranque",
+              "explanation": "El script `run_*.py` es el único responsable de iniciar un servicio. Sus responsabilidades son, en este orden: 1. Configurar el `sys.path` y ejecutar `ConfigLoader.initialize_service()`. 2. Ejecutar `setup_logging()`. 3. Crear todas las instancias de dependencias (DatabaseConnector, API Clients). 4. Inyectar estas dependencias en la clase principal del servicio o en la fábrica de la app. 5. Iniciar el ciclo de vida del servicio (ej. `uvicorn.run()` o `service.run()`).",
+              "rationale": "Centraliza la inicialización, asegura que la configuración y el logging se establezcan antes que cualquier otra cosa, e implementa el patrón de Inyección de Dependencias desde el punto más alto.",
+              "exampleCode": {
+                "language": "python",
+                "filename": "run_nuevo_servicio.py",
+                "code": "# 1. Carga de Configuración\nConfigLoader.initialize_service('nuevo_servicio')\n\n# 2. Setup de Logging\nsetup_logging('nuevo_servicio')\n\n# 3. Creación de Dependencias\ndb_con = DatabaseConnector(...)\naa_cli = AutomationAnywhereClient(...)\n\n# 4. Inyección de Dependencias\nfrom src.nuevo_servicio.main import create_app\napp = create_app(db_connector=db_con, aa_client=aa_cli)\n\n# 5. Arranque del Servicio\nuvicorn.run(app, ...)"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "principleTitle": "Gestión de Dependencias y Lógica de Negocio",
+      "principleDescription": "El código debe estar fuertemente desacoplado para facilitar las pruebas, el mantenimiento y la extensibilidad.",
+      "guidelines": [
+        {
+          "guidelineTitle": "Inyección de Dependencias (DI)",
+          "details": [
+            {
+              "concept": "No Crear, Recibir",
+              "explanation": "Una clase o función no debe crear sus propias dependencias (ej. `db = DatabaseConnector()`). En su lugar, debe recibirlas como argumentos en su constructor (`__init__`) o en sus parámetros.",
+              "rationale": "Permite reemplazar dependencias por 'mocks' en las pruebas unitarias, centraliza la gestión de recursos (evitando múltiples conexiones a la BD) y hace las dependencias de una clase explícitas.",
+              "exampleCode": {
+                "language": "python",
+                "code": "# INCORRECTO\nclass LogicaDeNegocio:\n    def __init__(self):\n        self.db = DatabaseConnector(...)\n\n# CORRECTO\nclass LogicaDeNegocio:\n    def __init__(self, db_connector: DatabaseConnector):\n        self.db_connector = db_connector"
+              }
+            }
+          ]
+        },
+        {
+          "guidelineTitle": "Separación de Responsabilidades (Orquestador vs. Cerebro)",
+          "details": [
+            {
+              "concept": "El Rol del Orquestador",
+              "explanation": "La clase principal de un servicio (ej. `LanzadorService` en `main.py`) debe actuar como un 'orquestador'. Sus responsabilidades son: gestionar el ciclo de vida (iniciar/detener), manejar la concurrencia (ej. `asyncio.gather`), recolectar los datos de las fuentes externas (llamando a los clientes) y pasar esos datos a la clase de lógica.",
+              "rationale": "Mantiene la clase principal simple y enfocada en la gestión del flujo, no en los detalles del algoritmo."
+            },
+            {
+              "concept": "El Rol del 'Cerebro'",
+              "explanation": "La lógica de negocio compleja y el algoritmo puro deben residir en una clase separada (ej. `Desplegador`, `Sincronizador`). Esta clase recibe los datos ya recolectados, toma las decisiones y devuelve un resultado. No debe saber de dónde vinieron los datos.",
+              "rationale": "Crea componentes altamente cohesivos, de responsabilidad única y fáciles de probar de forma aislada, ya que no tienen dependencias de I/O."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "principleTitle": "Código, Estilo y Robustez",
+      "principleDescription": "Principios para escribir código limpio, predecible y resiliente ante fallos.",
+      "guidelines": [
+        {
+          "guidelineTitle": "Configuración Centralizada y Consistente",
+          "details": [
+            {
+              "concept": "Única Fuente de Verdad",
+              "explanation": "Toda la configuración debe ser leída exclusivamente a través del módulo `ConfigManager`. Ningún otro componente debe leer `os.getenv()` directamente.",
+              "rationale": "Garantiza que toda la lógica de obtención, conversión de tipos y valores por defecto esté en un solo lugar, facilitando los cambios y la depuración."
+            },
+            {
+              "concept": "Nomenclatura de .env",
+              "explanation": "Las variables de entorno deben seguir la convención `SERVICIO_PARAMETRO_UNIDAD` (ej. `LANZADOR_INTERVALO_LANZAMIENTO_SEG`) y `SISTEMA_COMPONENTE_PARAMETRO` (ej. `SQL_SAM_HOST`).",
+              "rationale": "Hace que el archivo `.env` sea auto-documentado y fácil de entender."
+            }
+          ]
+        },
+        {
+          "guidelineTitle": "Nomenclatura de Código",
+          "details": [
+            {
+              "concept": "Miembros Internos",
+              "explanation": "Los atributos y métodos de una clase que no están destinados a ser utilizados desde fuera de la misma deben comenzar con un guion bajo (ej. `_shutdown_event`, `_validar_configuracion()`).",
+              "rationale": "Sigue la convención de Python (PEP 8) para la encapsulación y la privacidad, indicando claramente la API pública de una clase."
+            }
+          ]
+        },
+        {
+          "guidelineTitle": "Logging Efectivo",
+          "details": [
+            {
+              "concept": "Formato Legible",
+              "explanation": "Todos los servicios deben usar el `RelativePathFormatter` configurado en `logging_setup.py` para acortar las rutas de los módulos en los logs.",
+              "rationale": "Mejora drásticamente la legibilidad de los logs, facilitando la identificación del origen de un mensaje."
+            }
+          ]
+        },
+        {
+          "guidelineTitle": "Validación 'Falla Rápido' (Fail-Fast)",
+          "details": [
+            {
+              "concept": "Validación al Arranque",
+              "explanation": "El script `run_*.py` o el constructor de la clase principal del servicio debe validar que todas las variables de entorno y dependencias críticas están presentes. Si falta algo, el servicio debe fallar inmediatamente con un error claro.",
+              "rationale": "Evita que un servicio se ejecute en un estado inválido y falle de forma impredecible en tiempo de ejecución. Proporciona retroalimentación inmediata sobre problemas de configuración."
+            }
+          ]
+        },
+        {
+          "guidelineTitle": "Manejo de Conexiones",
+          "details": [
+            {
+              "concept": "Liberación de Recursos",
+              "explanation": "Cualquier componente que abra una conexión de larga duración (como `DatabaseConnector` o `AutomationAnywhereClient`) debe tener un método `close()` o `shutdown()` que sea llamado explícitamente durante el cierre ordenado del servicio (`graceful shutdown`).",
+              "rationale": "Asegura que las conexiones de red y los recursos se liberen correctamente, evitando 'resource leaks'."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

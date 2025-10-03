@@ -1,7 +1,4 @@
-/* ==========================================================================
-   1. ESTILOS GLOBALES Y TIPOGRAFÍA
-   ========================================================================== */
-
+/* --- ESTILOS GLOBALES Y TIPOGRAFÍA --- */
 :root {
   --pico-border-radius: 1rem;
   --pico-typography-spacing-vertical: 1.5rem;
@@ -11,7 +8,7 @@
 }
 
 h1 {
-  --pico-font-family: Manrope, cursive;
+  --pico-font-family: Pacifico, cursive;
   --pico-font-weight: 400;
   --pico-typography-spacing-vertical: 0.5rem;
 }
@@ -28,80 +25,44 @@ table thead th a:hover {
   --pico-text-decoration: none;
 }
 
-
-/* ==========================================================================
-   2. LAYOUT PRINCIPAL
-   ========================================================================== */
-
+/* --- LAYOUT PRINCIPAL --- */
 .sticky-header {
   position: sticky;
   top: 0;
-  z-index: 100;
   background-color: var(--pico-background-color);
+  z-index: 100;
+  padding: var(--pico-spacing);
   border-bottom: 1px solid var(--pico-card-border-color);
-  padding-top: 0.5rem;
-  padding-bottom: 0.5rem;
 }
 
 main.container {
-    padding-top: var(--pico-typography-spacing-vertical);
+  padding-top: 1rem;
 }
 
-
-/* ==========================================================================
-   3. COMPONENTES
-   ========================================================================== */
-
-/* --- Interruptor de Tema (Theme Switcher) --- */
-.theme-switcher {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  cursor: pointer;
+dialog[open] {
+  z-index: 1100;
 }
 
-/* --- Botón "Ghost" Secundario --- */
+/* --- COMPONENTES --- */
+/* Estilo para Botón "Ghost" Secundario */
 .secondary-ghost {
   --pico-color: var(--pico-primary);
   --pico-background-color: var(--pico-primary-background);
   --pico-border-color: transparent;
   --pico-box-shadow: none;
 }
-
 .secondary-ghost:hover {
   --pico-background-color: var(--pico-primary-hover-background);
 }
 
-/* --- Tags/Badges de Estado --- */
-.tag {
-  display: inline-block;
-  padding: 0.25rem 0.65rem;
-  font-size: 0.75rem;
-  font-weight: bold;
-  line-height: 1.25;
-  text-align: center;
-  white-space: nowrap;
-  vertical-align: baseline;
-  border-radius: var(--pico-border-radius);
+/* Contenedor del Interruptor de Tema */
+.theme-switcher {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
-.tag-dinamico {
-  color: #198754;
-  background-color: rgba(40, 167, 69, 0.2);
-}
-
-.tag-programado {
-  color: #0d6efd;
-  background-color: rgba(13, 110, 253, 0.2);
-}
-
-.tag-reservado {
-  color: #fd7e14;
-  background-color: rgba(253, 126, 20, 0.2);
-}
-
-
-/* --- Notificaciones (Toasts) --- */
+/* Notificaciones (Toast) */
 .toast-container {
   position: fixed;
   top: 1rem;
@@ -110,13 +71,11 @@ main.container {
   width: 380px;
   max-width: calc(100vw - 2rem);
 }
-
 .toast-stack {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
 }
-
 .toast {
   position: relative;
   padding: 1rem;
@@ -127,34 +86,39 @@ main.container {
   animation: slideIn 0.3s ease-out;
   transition: all 0.3s ease;
 }
-
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
 .toast-content {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem;
 }
-
 .toast-message {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   flex: 1;
 }
-
 .toast-icon {
   font-size: 1.125rem;
   font-weight: bold;
   line-height: 1;
   flex-shrink: 0;
 }
-
 .toast-text {
   font-size: 0.875rem;
   line-height: 1.4;
   color: var(--pico-color);
 }
-
 .toast-close {
   background: none;
   border: none;
@@ -167,136 +131,214 @@ main.container {
   transition: all 0.2s ease;
   flex-shrink: 0;
 }
-
 .toast-close:hover {
   background-color: var(--pico-secondary-hover);
   color: var(--pico-contrast-hover);
 }
-
-/* Estilos por tipo de notificación */
 .toast-success {
   border-left: 4px solid #28a745;
   background-color: rgba(40, 167, 69, 0.1);
 }
-.toast-success .toast-icon { color: #28a745; }
-
+.toast-success .toast-icon {
+  color: #28a745;
+}
 .toast-error {
   border-left: 4px solid #dc3545;
   background-color: rgba(220, 53, 69, 0.1);
 }
-.toast-error .toast-icon { color: #dc3545; }
-
+.toast-error .toast-icon {
+  color: #dc3545;
+}
 .toast-warning {
   border-left: 4px solid #ffc107;
   background-color: rgba(255, 193, 7, 0.1);
 }
-.toast-warning .toast-icon { color: #f57c00; }
-
+.toast-warning .toast-icon {
+  color: #f57c00;
+}
 .toast-info {
   border-left: 4px solid #007bff;
   background-color: rgba(0, 123, 255, 0.1);
 }
-.toast-info .toast-icon { color: #007bff; }
-
-/* Tema oscuro - ajustes de notificaciones */
+.toast-info .toast-icon {
+  color: #007bff;
+}
 [data-theme="dark"] .toast-success {
   border-left-color: #5cb85c;
   background-color: rgba(92, 184, 92, 0.15);
 }
-[data-theme="dark"] .toast-success .toast-icon { color: #5cb85c; }
-
+[data-theme="dark"] .toast-success .toast-icon {
+  color: #5cb85c;
+}
 [data-theme="dark"] .toast-error {
   border-left-color: #d9534f;
   background-color: rgba(217, 83, 79, 0.15);
 }
-[data-theme="dark"] .toast-error .toast-icon { color: #d9534f; }
-
+[data-theme="dark"] .toast-error .toast-icon {
+  color: #d9534f;
+}
 [data-theme="dark"] .toast-warning {
   border-left-color: #f0ad4e;
   background-color: rgba(240, 173, 78, 0.15);
 }
-[data-theme="dark"] .toast-warning .toast-icon { color: #f0ad4e; }
-
+[data-theme="dark"] .toast-warning .toast-icon {
+  color: #f0ad4e;
+}
 [data-theme="dark"] .toast-info {
   border-left-color: #5bc0de;
   background-color: rgba(91, 192, 222, 0.15);
 }
-[data-theme="dark"] .toast-info .toast-icon { color: #5bc0de; }
-
-/* <<-- NUEVO: Regla para asegurar que los modales estén por encima de todo -->> */
-dialog[open] {
-  z-index: 1100;
+[data-theme="dark"] .toast-info .toast-icon {
+  color: #5bc0de;
 }
 
-
-/* ==========================================================================
-   4. AJUSTES DE UI (Tablas, Formularios, etc.)
-   ========================================================================== */
-
-/* --- Controles de Rango (Sliders) --- */
-.range {
-  display: "flex";
-  align-items: "center";
-  gap: "1rem";
-}
-
-/* --- Ajustes de Tabla --- */
-.table-container {
-  overflow: auto;
-}
-
+/* --- AJUSTES DE UI --- */
+/* Reducir altura de filas de la tabla */
 table td,
 table th {
   --pico-table-cell-padding: 0.5rem 1rem;
 }
-
 table td fieldset {
   margin-bottom: 0;
 }
 
-/* --- Ajustes de Botones Compactos --- */
-button,
-details summary {
-  --pico-font-size: 0.75rem;
-  --pico-form-element-padding-vertical: 0.5rem;
-  --pico-form-element-padding-horizontal: 0.5rem;
+/* Estilo para Tags/Badges de Estado */
+.tag {
+  display: inline-block;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: bold;
+  line-height: 1.25;
+  text-align: center;
+  white-space: nowrap;
+  vertical-align: baseline;
+  border-radius: var(--pico-border-radius);
+}
+.tag-dinamico {
+  color: #198754;
+  background-color: rgba(40, 167, 69, 0.2);
+}
+.tag-programado {
+  color: #0d6efd;
+  background-color: rgba(13, 110, 253, 0.2);
+}
+.tag-reservado {
+  color: #fd7e14;
+  background-color: rgba(253, 126, 20, 0.2);
 }
 
-button i.fa-solid {
-  font-size: 0.8rem;
-  margin-right: 0.35rem;
+/* --- VISTA DE TARJETAS Y RESPONSIVIDAD --- */
+
+.table-container {
+  display: none;
+}
+.cards-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--pico-spacing);
+}
+.robot-card {
+  display: flex;
+  flex-direction: column;
+}
+.robot-card .card-body {
+  flex-grow: 1;
+}
+.robot-card .status-switches {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+.robot-card footer {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.5rem;
+}
+.robot-card h3 {
+  font-size: 1.1rem;
+  margin-bottom: 0.5rem;
+}
+.robot-card p {
+  margin-bottom: 0.25rem;
+  font-size: 0.9rem;
+}
+
+/* --- CONTROLES COLAPSABLES Y LAYOUT AVANZADO --- */
+
+.mobile-controls-toggle {
+  display: block;
+}
+
+.collapsible-panel {
+  display: none;
+  flex-direction: column;
+  gap: var(--pico-form-element-spacing-vertical);
+}
+.collapsible-panel.is-expanded {
+  display: flex;
+}
+
+/* Layout por defecto (Móvil) */
+.master-controls-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  grid-template-areas:
+    "buttons buttons"
+    "search search"
+    "filter1 filter2";
+}
+
+.master-controls-grid .search-input { grid-area: search; }
+.master-controls-grid .filter-select-active { grid-area: filter1; }
+.master-controls-grid .filter-select-online { grid-area: filter2; }
+.master-controls-grid .action-buttons-container {
+  grid-area: buttons;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
 }
 
 
-/* ==========================================================================
-   5. ANIMACIONES Y RESPONSIVIDAD
-   ========================================================================== */
-
-@keyframes slideIn {
-  from {
-    transform: translateX(100%);
-    opacity: 0;
+/* Layout para Escritorio */
+@media (min-width: 1024px) {
+  .mobile-controls-toggle {
+    display: none;
   }
-  to {
-    transform: translateX(0);
-    opacity: 1;
+  .collapsible-panel {
+    display: block; /* Cambiamos a block para que el grid funcione */
+  }
+  .master-controls-grid {
+    display: grid;
+    /* 3fr para el buscador (50%), 1fr para cada uno de los otros 3 bloques */
+    grid-template-columns: 3fr 1fr 1fr 2fr;
+    grid-template-areas: "search filter1 filter2 buttons";
+    gap: 1rem;
+    align-items: center;
+  }
+
+  .master-controls-grid .action-buttons-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
   }
 }
 
-@media (max-width: 768px) {
-  .toast-container {
-    top: 0.75rem;
-    right: 0.75rem;
-    left: 0.75rem;
-    width: auto;
+/* Ocultar tabla en móvil, mostrar en escritorio */
+@media (max-width: 1023px) {
+  .table-container {
+    display: none;
   }
-
-  .toast {
-    padding: 0.875rem;
+  .cards-container {
+    display: grid;
   }
-
-  .toast-text {
-    font-size: 0.8125rem;
+}
+@media (min-width: 1024px) {
+  .cards-container {
+    display: none;
+  }
+  .table-container {
+    display: block;
   }
 }
 

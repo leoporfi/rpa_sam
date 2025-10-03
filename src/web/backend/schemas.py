@@ -36,8 +36,8 @@ class ScheduleData(BaseModel):
 
 
 class AssignmentUpdateRequest(BaseModel):
-    assign_team_ids: List[int]
-    unassign_team_ids: List[int]
+    asignar_equipo_ids: List[int]
+    desasignar_equipo_ids: List[int]
 
 
 # Define la estructura de un objeto Robot

@@ -238,9 +238,9 @@ def RobotEditModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_suc
 
 
 @component
-def TeamList(
+def DeviceList(
     title: str,
-    teams: List[Dict],
+    devices: List[Dict],
     selected_ids: List[int],
     on_selection_change: Callable,
     search_term: str,
@@ -253,27 +253,27 @@ def TeamList(
 
     def handle_select_all(event):
         if event["target"]["checked"]:
-            on_selection_change([team["EquipoId"] for team in teams])
+            on_selection_change([device["EquipoId"] for device in devices])
         else:
             on_selection_change([])
 
-    def handle_select_one(team_id, is_checked):
+    def handle_select_one(device_id, is_checked):
         current_ids = set(selected_ids)
         if is_checked:
-            current_ids.add(team_id)
+            current_ids.add(device_id)
         else:
-            current_ids.discard(team_id)
+            current_ids.discard(device_id)
         on_selection_change(list(current_ids))
 
-    def get_estado(team: Dict) -> tuple[str, str]:
-        if team.get("EsProgramado"):
+    def get_estado(device: Dict) -> tuple[str, str]:
+        if device.get("EsProgramado"):
             return ("Programado", "tag-programado")
-        if team.get("Reservado"):
+        if device.get("Reservado"):
             return ("Reservado", "tag-reservado")
         return ("Dinámico", "tag-dinamico")
 
     # <<-- CAMBIO: La columna de estado se muestra si el primer elemento tiene la key -->>
-    has_status_column = teams and "EsProgramado" in teams[0]
+    has_status_column = devices and "EsProgramado" in devices[0]
 
     return html.div(
         html.h5(title),
@@ -300,22 +300,22 @@ def TeamList(
                 html.tbody(
                     *[
                         html.tr(
-                            {"key": team["EquipoId"]},
+                            {"key": device["EquipoId"]},
                             html.td(
                                 html.input(
                                     {
                                         "type": "checkbox",
-                                        "checked": team["EquipoId"] in selected_ids,
-                                        "onChange": lambda e, eid=team["EquipoId"]: handle_select_one(eid, e["target"]["checked"]),
+                                        "checked": device["EquipoId"] in selected_ids,
+                                        "onChange": lambda e, eid=device["EquipoId"]: handle_select_one(eid, e["target"]["checked"]),
                                     }
                                 )
                             ),
-                            html.td(team["Equipo"]),
-                            html.td(html.span({"className": f"tag {get_estado(team)[1]}"}, get_estado(team)[0])) if has_status_column else None,
+                            html.td(device["Equipo"]),
+                            html.td(html.span({"className": f"tag {get_estado(device)[1]}"}, get_estado(device)[0])) if has_status_column else None,
                         )
-                        for team in teams
+                        for device in devices
                     ]
-                    if teams
+                    if devices
                     else html.tr(html.td({"colSpan": 3 if has_status_column else 2}, "No hay equipos para mostrar."))
                 ),
             ),
@@ -326,8 +326,8 @@ def TeamList(
 @component
 def AssignmentsModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_success: Callable):
     # --- ESTADOS ---
-    assigned_teams, set_assigned_teams = use_state([])
-    available_teams, set_available_teams = use_state([])
+    assigned_devices, set_assigned_devices = use_state([])
+    available_devices, set_available_devices = use_state([])
     is_loading, set_is_loading = use_state(False)
 
     # <<-- CAMBIO: Renombrado para mayor claridad (equipos seleccionados para mover) -->>
@@ -355,10 +355,10 @@ def AssignmentsModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_s
             try:
                 assigned_res, available_res = await asyncio.gather(
                     api_service.get_robot_assignments(robot["RobotId"]),
-                    api_service.get_available_teams(robot["RobotId"]),
+                    api_service.get_available_devices(robot["RobotId"]),
                 )
-                set_assigned_teams(assigned_res)
-                set_available_teams(available_res)
+                set_assigned_devices(assigned_res)
+                set_available_devices(available_res)
             except Exception as e:
                 show_notification(f"Error al cargar datos: {e}", "error")
             finally:
@@ -368,10 +368,11 @@ def AssignmentsModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_s
 
     # --- LÓGICA DE FILTRADO ---
     filtered_assigned = use_memo(
-        lambda: [team for team in assigned_teams if search_assigned.lower() in team.get("Equipo", "").lower()], [assigned_teams, search_assigned]
+        lambda: [device for device in assigned_devices if search_assigned.lower() in device.get("Equipo", "").lower()], [assigned_devices, search_assigned]
     )
     filtered_available = use_memo(
-        lambda: [team for team in available_teams if search_available.lower() in team.get("Equipo", "").lower()], [available_teams, search_available]
+        lambda: [device for device in available_devices if search_available.lower() in device.get("Equipo", "").lower()],
+        [available_devices, search_available],
     )
 
     # --- MANEJADORES DE MOVIMIENTO Y GUARDADO ---
@@ -386,7 +387,7 @@ def AssignmentsModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_s
         try:
             # IDs originales vs actuales
             original_assigned_ids = {t["EquipoId"] for t in (await api_service.get_robot_assignments(robot["RobotId"]))}
-            current_assigned_ids = {t["EquipoId"] for t in assigned_teams}
+            current_assigned_ids = {t["EquipoId"] for t in assigned_devices}
 
             ids_to_assign = list(current_assigned_ids - original_assigned_ids)
             ids_to_unassign = list(original_assigned_ids - current_assigned_ids)
@@ -414,9 +415,9 @@ def AssignmentsModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_s
             # <<-- CAMBIO: Layout de 3 columnas: Disponible | Botones | Asignado -->>
             html.div(
                 {"className": "grid", "style": {"gridTemplateColumns": "5fr 1fr 5fr", "alignItems": "center", "gap": "1rem"}},
-                TeamList(
+                DeviceList(
                     title="Equipos Disponibles",
-                    teams=filtered_available,
+                    devices=filtered_available,
                     selected_ids=selected_in_available,
                     on_selection_change=set_selected_in_available,
                     search_term=search_available,
@@ -427,10 +428,10 @@ def AssignmentsModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_s
                     html.button(
                         {
                             "onClick": lambda e: move_items(
-                                available_teams,
-                                set_available_teams,
-                                assigned_teams,
-                                set_assigned_teams,
+                                available_devices,
+                                set_available_devices,
+                                assigned_devices,
+                                set_assigned_devices,
                                 selected_in_available,
                                 set_selected_in_available,
                             ),
@@ -442,10 +443,10 @@ def AssignmentsModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_s
                     html.button(
                         {
                             "onClick": lambda e: move_items(
-                                assigned_teams,
-                                set_assigned_teams,
-                                available_teams,
-                                set_available_teams,
+                                assigned_devices,
+                                set_assigned_devices,
+                                available_devices,
+                                set_available_devices,
                                 selected_in_assigned,
                                 set_selected_in_assigned,
                             ),
@@ -455,9 +456,9 @@ def AssignmentsModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_s
                         "<-",
                     ),
                 ),
-                TeamList(
+                DeviceList(
                     title="Equipos Asignados",
-                    teams=filtered_assigned,
+                    devices=filtered_assigned,
                     selected_ids=selected_in_assigned,
                     on_selection_change=set_selected_in_assigned,
                     search_term=search_assigned,
@@ -482,7 +483,7 @@ def SchedulesModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_suc
     show_notification = notification_ctx["show_notification"]
     view_mode, set_view_mode = use_state("list")
     schedules, set_schedules = use_state([])
-    available_teams, set_available_teams = use_state([])
+    available_devices, set_available_devices = use_state([])
     form_data, set_form_data = use_state(DEFAULT_FORM_STATE)
     is_loading, set_is_loading = use_state(False)
 
@@ -496,11 +497,11 @@ def SchedulesModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_suc
     async def fetch_schedule_data():
         set_is_loading(True)
         try:
-            schedules_res, teams_res = await asyncio.gather(
-                api_service.get_robot_schedules(robot["RobotId"]), api_service.get_available_teams(robot["RobotId"])
+            schedules_res, devices_res = await asyncio.gather(
+                api_service.get_robot_schedules(robot["RobotId"]), api_service.get_available_devices(robot["RobotId"])
             )
             set_schedules(schedules_res)
-            set_available_teams(teams_res)
+            set_available_devices(devices_res)
         except Exception as e:
             show_notification(str(e), "error")
         finally:
@@ -536,7 +537,7 @@ def SchedulesModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_suc
     handle_form_submit = use_callback(submit_form, [form_data, robot, on_save_success])
 
     def handle_edit_click(schedule_to_edit):
-        equipos_ids = [team["EquipoId"] for team in schedule_to_edit.get("Equipos", [])]
+        equipos_ids = [device["EquipoId"] for device in schedule_to_edit.get("Equipos", [])]
         form_state = {
             "ProgramacionId": schedule_to_edit.get("ProgramacionId"),
             "TipoProgramacion": schedule_to_edit.get("TipoProgramacion", "Diaria"),
@@ -584,7 +585,7 @@ def SchedulesModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_suc
                 if view_mode == "list"
                 else ScheduleForm(
                     form_data=form_data,
-                    available_teams=available_teams,
+                    available_devices=available_devices,
                     is_loading=is_loading,
                     on_submit=handle_form_submit,
                     on_cancel=handle_cancel,
@@ -614,7 +615,7 @@ def SchedulesList(api_service: ApiClient, schedules: List[Dict], robot_id: int, 
             html.tr(
                 {"key": s["ProgramacionId"]},
                 html.td(format_schedule_details(s)),
-                html.td(", ".join([team["Equipo"] for team in s.get("Equipos", [])]) or "Ninguno"),
+                html.td(", ".join([device["Equipo"] for device in s.get("Equipos", [])]) or "Ninguno"),
                 html.td(
                     html.div(
                         {"className": "grid"},
@@ -662,7 +663,7 @@ def DeleteButton(api_service: ApiClient, schedule_id: int, robot_id: int, on_del
 
 
 @component
-def ScheduleForm(form_data: Dict, available_teams: List[Dict], is_loading: bool, on_submit: Callable, on_cancel: Callable, on_change: Callable):
+def ScheduleForm(form_data: Dict, available_devices: List[Dict], is_loading: bool, on_submit: Callable, on_cancel: Callable, on_change: Callable):
     tipo = form_data.get("TipoProgramacion")
     schedule_options = use_memo(
         lambda: [html.option({"value": schedule_type, "key": schedule_type}, schedule_type) for schedule_type in SCHEDULE_TYPES], []
@@ -671,8 +672,8 @@ def ScheduleForm(form_data: Dict, available_teams: List[Dict], is_loading: bool,
     def handle_form_change(field, value):
         on_change(field, value)
 
-    def handle_team_change(teams):
-        on_change("Equipos", list(teams) if teams else [])
+    def handle_device_change(devices):
+        on_change("Equipos", list(devices) if devices else [])
 
     return html._(
         html.form(
@@ -707,7 +708,7 @@ def ScheduleForm(form_data: Dict, available_teams: List[Dict], is_loading: bool,
                 ),
             ),
             ConditionalFields(tipo, form_data, handle_form_change),
-            TeamSelector(available_teams, form_data.get("Equipos", []), handle_team_change),
+            DeviceSelector(available_devices, form_data.get("Equipos", []), handle_device_change),
         ),
         html.footer(
             html.div(
@@ -756,40 +757,40 @@ def ConditionalFields(tipo: str, form_data: Dict, on_change: Callable):
 
 
 @component
-def TeamSelector(available_teams: List[Dict], selected_teams: List[int], on_change: Callable):
-    safe_selected_teams = selected_teams or []
-    selected_teams_set = use_memo(lambda: set(safe_selected_teams), [safe_selected_teams])
-    all_available_ids_set = use_memo(lambda: {team["EquipoId"] for team in available_teams}, [available_teams])
-    are_all_teams_selected = all_available_ids_set and all_available_ids_set.issubset(selected_teams_set)
+def DeviceSelector(available_devices: List[Dict], selected_devices: List[int], on_change: Callable):
+    safe_selected_devices = selected_devices or []
+    selected_devices_set = use_memo(lambda: set(safe_selected_devices), [safe_selected_devices])
+    all_available_ids_set = use_memo(lambda: {device["EquipoId"] for device in available_devices}, [available_devices])
+    are_all_devices_selected = all_available_ids_set and all_available_ids_set.issubset(selected_devices_set)
 
-    def handle_select_all_teams(event):
+    def handle_select_all_devices(event):
         on_change(list(all_available_ids_set) if event["target"]["checked"] else [])
 
-    def handle_team_select(team_id, checked):
-        current_teams = set(safe_selected_teams)
+    def handle_device_select(device_id, checked):
+        current_devices = set(safe_selected_devices)
         if checked:
-            current_teams.add(team_id)
+            current_devices.add(device_id)
         else:
-            current_teams.discard(team_id)
-        on_change(list(current_teams))
+            current_devices.discard(device_id)
+        on_change(list(current_devices))
 
     return html.fieldset(
-        html.label(html.input({"type": "checkbox", "checked": are_all_teams_selected, "onChange": handle_select_all_teams}), "Asignar Equipos"),
+        html.label(html.input({"type": "checkbox", "checked": are_all_devices_selected, "onChange": handle_select_all_devices}), "Asignar Equipos"),
         html.div(
             {"style": {"maxHeight": "200px", "overflowY": "auto"}},
             *[
                 html.label(
-                    {"key": team["EquipoId"]},
+                    {"key": device["EquipoId"]},
                     html.input(
                         {
                             "type": "checkbox",
-                            "checked": team["EquipoId"] in selected_teams_set,
-                            "onChange": lambda e, tid=team["EquipoId"]: handle_team_select(tid, e["target"]["checked"]),
+                            "checked": device["EquipoId"] in selected_devices_set,
+                            "onChange": lambda e, tid=device["EquipoId"]: handle_device_select(tid, e["target"]["checked"]),
                         }
                     ),
-                    team["Equipo"],
+                    device["Equipo"],
                 )
-                for team in available_teams
+                for device in available_devices
             ],
         ),
     )

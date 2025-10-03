@@ -151,17 +151,17 @@ class ApiClient:
         except Exception as e:
             raise APIException(f"Error al obtener asignaciones del robot {robot_id}: {str(e)}")
 
-    async def get_available_teams(self, robot_id: int) -> List[Dict]:
+    async def get_available_devices(self, robot_id: int) -> List[Dict]:
         """Obtiene los equipos disponibles para asignar a un robot"""
         try:
             return await self._request("GET", f"/api/equipos/disponibles/{robot_id}")
         except Exception as e:
             raise APIException(f"Error al obtener equipos disponibles: {str(e)}")
 
-    async def update_robot_assignments(self, robot_id: int, assign_team_ids: List[int], unassign_team_ids: List[int]) -> Dict:
+    async def update_robot_assignments(self, robot_id: int, assign_device_ids: List[int], unassign_device_ids: List[int]) -> Dict:
         """Actualiza las asignaciones de un robot"""
         try:
-            data = {"assign_team_ids": assign_team_ids, "unassign_team_ids": unassign_team_ids}
+            data = {"assign_device_ids": assign_device_ids, "unassign_device_ids": unassign_device_ids}
             return await self._request("POST", f"/api/robots/{robot_id}/asignaciones", json_data=data)
         except Exception as e:
             raise APIException(f"Error al actualizar asignaciones del robot {robot_id}: {str(e)}")
@@ -219,9 +219,9 @@ class ApiClient:
         """Obtiene los recursos asignados y disponibles para un pool."""
         return await self._request("GET", f"/api/pools/{pool_id}/asignaciones")
 
-    async def update_pool_assignments(self, pool_id: int, robot_ids: List[int], team_ids: List[int]) -> Dict:
+    async def update_pool_assignments(self, pool_id: int, robot_ids: List[int], device_ids: List[int]) -> Dict:
         """Actualiza las asignaciones de un pool."""
-        payload = {"robot_ids": robot_ids, "team_ids": team_ids}
+        payload = {"robot_ids": robot_ids, "device_ids": device_ids}
         return await self._request("PUT", f"/api/pools/{pool_id}/asignaciones", json_data=payload)
 
     # MÉTODOS UTILITARIOS

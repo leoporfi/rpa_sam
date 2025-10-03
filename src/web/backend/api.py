@@ -136,7 +136,7 @@ def update_schedule(programacion_id: int, data: ScheduleData, db: DatabaseConnec
 # router = APIRouter(prefix="/api/equipos", tags=["Equipos"])
 # --- Rutas para Equipos ---
 @router.get("/api/equipos/disponibles/{robot_id}", tags=["Equipos"])
-def get_available_teams(robot_id: int, db: DatabaseConnector = Depends(get_db)):
+def get_available_devices(robot_id: int, db: DatabaseConnector = Depends(get_db)):
     """
     Obtiene la lista de equipos disponibles para ser asignados a un robot.
     """
@@ -148,7 +148,7 @@ def get_available_teams(robot_id: int, db: DatabaseConnector = Depends(get_db)):
 
 # router = APIRouter(prefix="/api/robots/{robot_id}/asignaciones", tags=["Asignaciones"])
 @router.get("/api/robots/{robot_id}/asignaciones", tags=["Asignaciones"])
-def get_robot_asignaciones(robot_id: int, db: DatabaseConnector = Depends(get_db)):
+def get_robot_assignments(robot_id: int, db: DatabaseConnector = Depends(get_db)):
     try:
         return db_service.get_asignaciones_by_robot(db, robot_id)
     except Exception as e:
@@ -156,9 +156,9 @@ def get_robot_asignaciones(robot_id: int, db: DatabaseConnector = Depends(get_db
 
 
 @router.post("/api/robots/{robot_id}/asignaciones", tags=["Asignaciones"])
-def update_robot_asignaciones(robot_id: int, update_data: AssignmentUpdateRequest, db: DatabaseConnector = Depends(get_db)):
+def update_robot_assignments(robot_id: int, update_data: AssignmentUpdateRequest, db: DatabaseConnector = Depends(get_db)):
     try:
-        result = db_service.update_asignaciones_robot(db, robot_id, update_data.assign_team_ids, update_data.unassign_team_ids)
+        result = db_service.update_asignaciones_robot(db, robot_id, update_data.asignar_equipo_ids, update_data.desasignar_equipo_ids)
         return result
     except ValueError as e:  # Para errores controlados como "Robot no encontrado"
         raise HTTPException(status_code=404, detail=str(e))
@@ -196,9 +196,6 @@ def create_new_pool(pool_data: PoolCreate, db: DatabaseConnector = Depends(get_d
         # Capturamos posibles errores (ej. nombre duplicado desde el RAISERROR)
         logger.error(f"Error al obtener los pools: {e}", exc_info=True)
         raise HTTPException(status_code=409, detail=str(e))
-
-
-# En src/web/api.py
 
 
 @router.put("/api/pools/{pool_id}", tags=["Pools"])
@@ -276,4 +273,7 @@ def set_pool_assignments(pool_id: int, data: PoolAssignmentsRequest, db: Databas
         error_message = str(e)
         if "No se encontró un pool" in error_message:
             raise HTTPException(status_code=404, detail=error_message)
+        raise HTTPException(status_code=500, detail=f"Error al actualizar asignaciones: {error_message}")
+        raise HTTPException(status_code=500, detail=f"Error al actualizar asignaciones: {error_message}")
+        raise HTTPException(status_code=500, detail=f"Error al actualizar asignaciones: {error_message}")
         raise HTTPException(status_code=500, detail=f"Error al actualizar asignaciones: {error_message}")
