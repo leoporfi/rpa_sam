@@ -10,9 +10,11 @@ dependencies = [
     "pyodbc>=5.0.0",
     "python-dotenv>=1.0.0",
     "urllib3>=2.0.0",
-    "reactpy[fastapi]>=1.0.0",
     "schedule>=1.2.2",
-    "reactpy-router>=0.0.1",
+    "requests>=2.32.4",
+    "pytz>=2025.2",
+    "python-dateutil",
+    "reactpy>=1.0.0",
 ]
 
 [project.optional-dependencies]
