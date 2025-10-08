@@ -1,16 +1,10 @@
-# sam/callback/run_callback.py
 import logging
 import sys
 
 import uvicorn
 
-from sam.callback.service.main import create_app
-
-# --- Importaciones del Proyecto ---
-from sam.common.config_loader import ConfigLoader
+# Ya no necesitamos importar dependencias aquí, el lifespan se encarga.
 from sam.common.config_manager import ConfigManager
-from sam.common.database import DatabaseConnector
-from sam.common.logging_setup import setup_logging
 
 # --- Constantes ---
 SERVICE_NAME = "callback"
@@ -18,57 +12,49 @@ SERVICE_NAME = "callback"
 
 def main():
     """
-    Función principal que construye las dependencias, crea la app FastAPI
-    y la ejecuta con Uvicorn.
+    Función principal que lee la configuración del servidor y ejecuta Uvicorn.
+    La creación de la app y sus dependencias ahora es gestionada por el 'lifespan' de FastAPI.
     """
-    setup_logging(service_name=SERVICE_NAME)
-    logger = logging.getLogger(__name__)
-
-    logger.info(f"Iniciando el servicio FastAPI: {SERVICE_NAME.capitalize()}")
+    # NOTA: El logging y ConfigLoader ahora se inicializan DENTRO de cada worker
+    # a través del lifespan en 'main.py', por lo que no se llaman aquí.
 
     try:
-        # 1. Cargar la configuración necesaria.
+        # 1. Cargar solo la configuración del servidor necesaria para Uvicorn.
+        # Es necesario inicializar ConfigLoader aquí para poder leer la configuración.
+        from sam.common.config_loader import ConfigLoader
+
+        if not ConfigLoader.is_initialized():
+            ConfigLoader.initialize_service(SERVICE_NAME)
+
         server_config = ConfigManager.get_callback_server_config()
-        sql_config = ConfigManager.get_sql_server_config("SQL_SAM")
+        log_config = ConfigManager.get_log_config()
 
-        # 2. Validación "Falla Rápido" (Fail-Fast).
-        if not all([sql_config.get("servidor"), sql_config.get("base_datos")]):
-            raise ValueError("Configuración crítica de la base de datos SAM faltante.")
-
-        logger.info("Validación de configuración completada.")
-
-        # 3. Crear las dependencias una sola vez (Inyección de Dependencias).
-        logger.info("Creando instancia del conector de base de datos...")
-        db_connector = DatabaseConnector(
-            servidor=sql_config["servidor"],
-            base_datos=sql_config["base_datos"],
-            usuario=sql_config["usuario"],
-            contrasena=sql_config["contrasena"],
-        )
-
-        # 4. Crear la aplicación FastAPI, inyectando la dependencia.
-        app = create_app(db_connector=db_connector)
-
-        # 5. Configurar y ejecutar Uvicorn.
         host = server_config.get("host", "0.0.0.0")
         port = server_config.get("port", 8008)
-        workers = server_config.get("threads", 1)
+        workers = server_config.get("threads", 5)
+        log_level = log_config.get("level_str", "info").lower()
 
-        logger.info(f"Iniciando Uvicorn en http://{host}:{port} con {workers} worker(s)...")
+        # Usamos print() porque el logging aún no está configurado en este proceso principal.
+        print(f"[{SERVICE_NAME.upper()}] Iniciando Uvicorn en http://{host}:{port} con {workers} worker(s)...")
+
+        # 2. Ejecutar Uvicorn usando el "import string".
+        # Uvicorn se encargará de lanzar los workers, y cada worker ejecutará el 'lifespan'.
         uvicorn.run(
-            app, #"sam.callback.service.main:app",
+            "sam.callback.service.main:app",
             host=host,
             port=port,
             workers=workers,
-            log_level=logging.getLogger().getEffectiveLevel(),
+            log_level=log_level,
         )
 
     except Exception as e:
-        logger.critical(f"Error crítico no controlado al iniciar el servicio {SERVICE_NAME}: {e}", exc_info=True)
+        # Error crítico durante el arranque (ej. .env no encontrado)
+        print(f"CRÍTICO: Error no controlado al iniciar el servicio {SERVICE_NAME}: {e}", file=sys.stderr)
+        # Imprime el traceback para más detalles
+        import traceback
+
+        traceback.print_exc()
         sys.exit(1)
 
 
-if __name__ == "__main__":
-    if not ConfigLoader.is_initialized():
-        ConfigLoader.initialize_service(SERVICE_NAME)
-    main()
+# El __main__.py del servicio llamará a esta función main().
