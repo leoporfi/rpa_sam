@@ -1,0 +1,121 @@
+openapi: 3.0.1
+info:
+  title: "SAM Callback Service API"
+  version: "2.3.0"
+  description: |
+    API para recibir callbacks desde Control Room a través del API Gateway.
+    **Requiere obligatoriamente una Clave de API (API Key) en el header `X-Authorization`.**
+
+    Este endpoint es **idempotente**: si se recibe una notificación para una ejecución que ya se encuentra en un estado final, el servicio responderá con un éxito (`200 OK`) indicando que no se realizaron cambios, en lugar de generar un error.
+servers:
+  - url: "http://10.167.181.41:8008"
+    description: Servidor de Producción
+  - url: "http://10.167.181.42:8008"
+    description: Servidor de Desarrollo
+
+paths:
+  /api/callback:
+    post:
+      summary: "Recibir notificación de callback de A360"
+      description: |
+        Endpoint único que recibe una solicitud POST con el estado final de una ejecución de bot en A360.
+        La autenticación mediante el header `X-Authorization` es obligatoria.
+      tags:
+        - "Callback"
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CallbackPayload'
+      responses:
+        '200':
+          description: "Callback procesado. El mensaje de respuesta indicará si se realizó una nueva actualización o si la ejecución ya había sido registrada como finalizada previamente."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              examples:
+                NewUpdate:
+                  summary: "Actualización exitosa"
+                  value:
+                    status: "OK"
+                    message: "Callback procesado y estado actualizado correctamente."
+                AlreadyProcessed:
+                  summary: "Ejecución ya finalizada"
+                  value:
+                    status: "OK"
+                    message: "Callback recibido, pero la ejecución ya se encontraba en un estado final. No se realizaron cambios."
+        '400':
+          description: "Petición inválida (JSON malformado o faltan campos requeridos)."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: "Autenticación Fallida. La Clave de API en 'X-Authorization' es inválida o no fue proporcionada."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: "Error interno del servidor al procesar la solicitud."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    CallbackPayload:
+      type: object
+      required:
+        - deploymentId
+        - status
+      properties:
+        deploymentId:
+          type: string
+          description: "Identificador único del deployment."
+        status:
+          type: string
+          description: "Estado de la ejecución (ej. COMPLETED, FAILED)."
+        deviceId:
+          type: string
+          description: "(Opcional) Identificador del dispositivo que ejecutó el bot."
+        userId:
+          type: string
+          description: "(Opcional) Identificador del usuario asociado a la ejecución."
+        botOutput:
+          type: object
+          description: "(Opcional) Salida generada por el bot."
+          additionalProperties: true
+
+    SuccessResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "OK"
+        message:
+          type: string
+          example: "Callback procesado y estado actualizado correctamente."
+
+    ErrorResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "ERROR"
+        message:
+          type: string
+          example: "Clave de API inválida."
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Authorization
+      description: "Clave de API (API Key) para validar que la llamada es legítima."
+
