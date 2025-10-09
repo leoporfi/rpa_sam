@@ -1,10 +1,11 @@
+# sam/balanceador/run_balanceador.py (Refactorizado con patrón Fábrica)
+
 import logging
 import signal
 import sys
 from typing import Optional
 
 from sam.balanceador.service.main import BalanceadorService
-from sam.common.config_loader import ConfigLoader
 from sam.common.config_manager import ConfigManager
 from sam.common.database import DatabaseConnector
 from sam.common.logging_setup import setup_logging
@@ -34,7 +35,7 @@ def main():
         signal.signal(signal.SIGINT, graceful_shutdown)
         signal.signal(signal.SIGTERM, graceful_shutdown)
 
-        # --- 1. Creación de Dependencias (Inyección de Dependencias) ---
+        # --- 1. Creación de Dependencias (Patrón Fábrica) ---
         logging.info("Creando dependencias del servicio Balanceador...")
         cfg_sql_sam = ConfigManager.get_sql_server_config("SQL_SAM")
         db_sam = DatabaseConnector(
@@ -71,10 +72,3 @@ def main():
         if db_rpa360:
             db_rpa360.cerrar_conexion_hilo_actual()
         logging.info(f"El servicio {SERVICE_NAME} ha concluido su ejecución.")
-
-
-# Este bloque sigue siendo útil para pruebas directas del script
-if __name__ == "__main__":
-    if not ConfigLoader.is_initialized():
-        ConfigLoader.initialize_service(SERVICE_NAME)
-    main()

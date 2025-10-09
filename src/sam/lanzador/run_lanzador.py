@@ -5,16 +5,14 @@ import signal
 import sys
 from typing import Optional
 
-# --- Importaciones de Módulos Comunes ---
-# Asume que common/ ha sido aplanado y los imports son directos
+# Corrección en los imports para la estructura plana de 'common'
 from sam.common.a360_client import AutomationAnywhereClient
 from sam.common.apigw_client import ApiGatewayClient
+from sam.common.config_loader import ConfigLoader
 from sam.common.config_manager import ConfigManager
 from sam.common.database import DatabaseConnector
 from sam.common.logging_setup import setup_logging
 from sam.common.mail_client import EmailAlertClient
-
-# --- Importaciones de Componentes del Servicio ---
 from sam.lanzador.service.conciliador import Conciliador
 from sam.lanzador.service.desplegador import Desplegador
 from sam.lanzador.service.main import LanzadorService
@@ -25,37 +23,20 @@ SERVICE_NAME = "lanzador"
 service_instance: Optional[LanzadorService] = None
 
 
+# --- Manejo de Cierre Ordenado (Graceful Shutdown) ---
 def graceful_shutdown(signum, frame):
-    """
-    Manejador de señales para un cierre ordenado del servicio.
-    Establece el evento de parada en la instancia del servicio.
-    """
     logging.info(f"Señal de parada recibida (Señal: {signum}). Iniciando cierre ordenado...")
     if service_instance:
         service_instance.stop()
-    # El bucle principal en main_async() se encargará de la limpieza final.
 
 
 async def main_async():
-    """
-    Función principal asíncrona que gestiona el ciclo de vida completo del servicio.
-    Actúa como una "Fábrica" que crea e inyecta todas las dependencias.
-    """
+    """Función principal asíncrona que gestiona el ciclo de vida completo del servicio."""
     global service_instance
 
-    # Configurar logging al inicio.
+    # --- Configuración inicial ---
     setup_logging(service_name=SERVICE_NAME)
     logging.info(f"Iniciando el servicio: {SERVICE_NAME.capitalize()}...")
-
-    # Configurar manejadores de señales para un cierre limpio
-    loop = asyncio.get_running_loop()
-    if sys.platform != "win32":
-        loop.add_signal_handler(signal.SIGINT, graceful_shutdown, signal.SIGINT, None)
-        loop.add_signal_handler(signal.SIGTERM, graceful_shutdown, signal.SIGTERM, None)
-    else:
-        # Enfoque simplificado para Windows
-        signal.signal(signal.SIGINT, graceful_shutdown)
-        signal.signal(signal.SIGTERM, graceful_shutdown)
 
     db_connector = None
     aa_client = None
@@ -63,32 +44,37 @@ async def main_async():
 
     try:
         logging.info("Creando todas las dependencias del servicio...")
-
-        # --- 1. Cargar Configuración ---
+        # Configuración
         lanzador_cfg = ConfigManager.get_lanzador_config()
+        aa_cfg = ConfigManager.get_aa_config()
         sync_enabled = os.getenv("LANZADOR_HABILITAR_SYNC", "True").lower() == "true"
         callback_token = ConfigManager.get_callback_server_config().get("token")
         cfg_sql_sam = ConfigManager.get_sql_server_config("SQL_SAM")
-        aa_cfg = ConfigManager.get_aa_config()
-        apigw_cfg = ConfigManager.get_apigw_config()
 
-        # --- 2. Crear Clientes y Conectores (Dependencias) ---
+        # --- Creación de Dependencias ---
         db_connector = DatabaseConnector(
             servidor=cfg_sql_sam["servidor"],
             base_datos=cfg_sql_sam["base_datos"],
             usuario=cfg_sql_sam["usuario"],
             contrasena=cfg_sql_sam["contrasena"],
         )
+
+        # --- CORRECCIÓN AQUÍ ---
+        # Se pasan los argumentos de forma explícita y correcta.
+        # 'password' es opcional y 'api_key' se pasa como keyword argument.
         aa_client = AutomationAnywhereClient(
             control_room_url=aa_cfg["url_cr"],
             username=aa_cfg["usuario"],
-            api_key=aa_cfg["api_key"],
-            **aa_cfg,
+            password=aa_cfg.get("pwd"),  # Opcional, se usa .get()
+            api_key=aa_cfg.get("api_key"),  # Se pasa explícitamente
+            api_timeout_seconds=aa_cfg.get("api_timeout_seconds"),
+            callback_url_deploy=aa_cfg.get("callback_url_deploy"),
         )
-        gateway_client = ApiGatewayClient(apigw_cfg)
+
+        gateway_client = ApiGatewayClient(ConfigManager.get_apigw_config())
         notificador = EmailAlertClient(service_name=SERVICE_NAME)
 
-        # --- 3. Crear Componentes de Lógica ("Cerebros") ---
+        # Componentes de Lógica ("Cerebros")
         sincronizador = Sincronizador(db_connector=db_connector, aa_client=aa_client)
         desplegador = Desplegador(
             db_connector=db_connector,
@@ -103,7 +89,7 @@ async def main_async():
             max_intentos_fallidos=lanzador_cfg["conciliador_max_intentos_fallidos"],
         )
 
-        # --- 4. Crear e Inyectar en el Orquestador ---
+        # Orquestador
         service_instance = LanzadorService(
             sincronizador=sincronizador,
             desplegador=desplegador,
@@ -113,14 +99,14 @@ async def main_async():
             sync_enabled=sync_enabled,
         )
 
-        # --- 5. Ejecutar el Servicio ---
+        # --- Ejecución del Servicio ---
         logging.info("Iniciando el ciclo principal del orquestador...")
         await service_instance.run()
 
     except Exception as e:
         logging.critical(f"Error crítico no controlado en el servicio {SERVICE_NAME}: {e}", exc_info=True)
     finally:
-        # --- 6. Limpieza Final de Recursos ---
+        # --- Limpieza Final de Recursos ---
         logging.info("Iniciando limpieza final de recursos...")
         if gateway_client:
             await gateway_client.close()
@@ -129,3 +115,21 @@ async def main_async():
         if db_connector:
             db_connector.cerrar_conexion_hilo_actual()
         logging.info(f"El servicio {SERVICE_NAME} ha concluido su ejecución y liberado recursos.")
+
+
+# Este bloque solo se ejecuta si se llama directamente al script,
+# pero la ejecución principal viene de __main__.py
+if __name__ == "__main__":
+    # Configurar manejadores de señales para un cierre limpio
+    loop = asyncio.get_event_loop()
+    if sys.platform != "win32":
+        loop.add_signal_handler(signal.SIGINT, graceful_shutdown)
+        loop.add_signal_handler(signal.SIGTERM, graceful_shutdown)
+    else:
+        signal.signal(signal.SIGINT, graceful_shutdown)
+        signal.signal(signal.SIGTERM, graceful_shutdown)
+
+    try:
+        loop.run_until_complete(main_async())
+    except asyncio.CancelledError:
+        logging.info("El bucle principal de eventos fue cancelado.")

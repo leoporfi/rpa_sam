@@ -58,7 +58,7 @@ class AutomationAnywhereClient:
         else:
             # Si no hay ni apiKey ni contraseña, es un error de configuración
             error_msg = (
-                "Error de configuración: No se proporcionó ni AA_CR_API_KEY ni AA_CR_PWD para la autenticación en A360."
+                "No se proporcionó ni AA_CR_API_KEY ni AA_CR_PWD para la autenticación en A360."
             )
             logger.error(error_msg)
             raise ValueError(error_msg)
@@ -94,7 +94,6 @@ class AutomationAnywhereClient:
             response = await self._client.request(method, endpoint, **kwargs)
             response.raise_for_status()
             return response.json() if response.content else {}
-
         except httpx.HTTPStatusError as e:
             # --- LÓGICA DE REFRESCO DE TOKEN ---
             # Si el error es 401 (No Autorizado), el token probablemente expiró.
@@ -122,25 +121,18 @@ class AutomationAnywhereClient:
         lista_completa = []
         offset = 0
         page_size = 100
-
-        if "page" not in payload:
-            payload["page"] = {}
+        payload["page"] = payload.get("page", {})
 
         while True:
             payload["page"]["offset"] = offset
             payload["page"]["length"] = page_size
-
             response_json = await self._realizar_peticion_api("POST", endpoint, json=payload)
             entidades_pagina = response_json.get("list", [])
-
             if not entidades_pagina:
                 break
-
             lista_completa.extend(entidades_pagina)
-
             if len(entidades_pagina) < page_size:
                 break
-
             offset += page_size
 
         logger.info(f"Paginación: Se obtuvieron un total de {len(lista_completa)} entidades de {endpoint}.")
@@ -215,14 +207,10 @@ class AutomationAnywhereClient:
         robots_mapeados = []
         for bot in robots_api:
             nombre = bot.get("name")
-            if nombre and patron_nombre.match(nombre):
-                # Excluir robots que contienen "loop" en el nombre (insensible a mayúsculas/minúsculas)
-                if "loop" in nombre.lower():
-                    continue
+            if nombre and patron_nombre.match(nombre) and "loop" not in nombre.lower():
                 robots_mapeados.append(
                     {"RobotId": bot.get("id"), "Robot": nombre, "Descripcion": bot.get("description")}
                 )
-
         logger.info(f"Se encontraron y filtraron {len(robots_mapeados)} robots.")
         return robots_mapeados
 
@@ -230,7 +218,6 @@ class AutomationAnywhereClient:
         """Obtiene detalles de deployments procesando los IDs en lotes para evitar timeouts."""
         if not deployment_ids:
             return []
-
         all_details = []
         logger.info(
             f"Obteniendo detalles de {len(deployment_ids)} deployments en lotes de {self.CONCILIADOR_BATCH_SIZE}..."
@@ -239,23 +226,25 @@ class AutomationAnywhereClient:
         for i in range(0, len(deployment_ids), self.CONCILIADOR_BATCH_SIZE):
             batch_ids = deployment_ids[i : i + self.CONCILIADOR_BATCH_SIZE]
             logger.debug(f"Procesando lote {i // self.CONCILIADOR_BATCH_SIZE + 1} con {len(batch_ids)} IDs.")
-
             payload = self._crear_filtro_deployment_ids(batch_ids)
-
+            # payload = {
+            #     "sort": [{"field": "startDateTime", "direction": "desc"}],
+            #     "filter": {
+            #         "operator": "or",
+            #         "operands": [{"operator": "eq", "field": "deploymentId", "value": dep_id} for dep_id in batch_ids],
+            #     },
+            # }
             try:
                 response_json = await self._realizar_peticion_api("POST", self._ENDPOINT_ACTIVITY_LIST_V3, json=payload)
-                batch_details = response_json.get("list", [])
-                if batch_details:
-                    all_details.extend(batch_details)
+                all_details.extend(response_json.get("list", []))
             except httpx.ReadTimeout as e:
                 logger.error(
                     f"Timeout ({self.api_timeout}s) al procesar un lote de {len(batch_ids)} deployment IDs. Lote omitido. IDs: {batch_ids}."
                 )
             except Exception as e:
                 logger.error(
-                    f"Error inesperado al procesar un lote de deployment IDs. Lote omitido. Error: {e}", exc_info=True
+                    f"Error al procesar un lote de deployment IDs. Lote omitido. Error: {e}", exc_info=True
                 )
-
         logger.info(f"Se obtuvieron detalles para {len(all_details)} de {len(deployment_ids)} deployments solicitados.")
         return all_details
 

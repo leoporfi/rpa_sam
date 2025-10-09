@@ -1,10 +1,10 @@
-# SAM/src/balanceador/service/main.py
+# SAM/src/balanceador/service/main.py (Refactorizado con Inyección de Dependencias)
 
 import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import schedule
 
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 class BalanceadorService:
     """
-    Servicio de Balanceo de SAM, encapsulado en una clase para un control claro
+    Servicio de Balanceo de SAM, que recibe sus dependencias para un control claro
     del ciclo de vida y los recursos.
     """
 
@@ -38,106 +38,80 @@ class BalanceadorService:
         self._validar_configuracion_critica()
 
         # --- 3. Inicializar componentes de lógica ---
-        dependencias_proveedores = self._preparar_dependencias_proveedores()
         nombres_proveedores = self.cfg_balanceador_specifics.get("proveedores_carga", [])
-        self.proveedores_carga = ProveedorCargaFactory.crear_proveedores(
-            nombres_proveedores, **dependencias_proveedores
-        )
-
-        self.balanceo_logic = Balanceo(self)
-        self._shutdown_event = threading.Event()
-        self.scheduler = schedule.Scheduler()
-
-        intervalo = self.cfg_balanceador_specifics["intervalo_ciclo_seg"]
-        self.scheduler.every(intervalo).seconds.do(self._execute_cycle)
-        logger.info(f"BalanceadorService inicializado. Ciclo configurado cada {intervalo} segundos.")
-
-    def _preparar_dependencias_proveedores(self) -> Dict[str, Any]:
-        """Prepara el diccionario de dependencias para la fábrica de proveedores."""
-        return {"db_sam": self.db_sam, "db_rpa360": self.db_rpa360, "mapa_robots": ConfigManager.get_mapa_robots()}
-
-    def _inicializar_dependencias(self) -> Dict[str, Any]:
-        """Crea y devuelve un diccionario con todas las dependencias compartidas."""
-        cfg_sql_sam = ConfigManager.get_sql_server_config("SQL_SAM")
-        db_sam = DatabaseConnector(
-            servidor=cfg_sql_sam["servidor"],
-            base_datos=cfg_sql_sam["base_datos"],
-            usuario=cfg_sql_sam["usuario"],
-            contrasena=cfg_sql_sam["contrasena"],
-            db_config_prefix="SQL_SAM",
-        )
-
-        cfg_sql_rpa360 = ConfigManager.get_sql_server_config("SQL_RPA360")
-        db_rpa360 = DatabaseConnector(
-            servidor=cfg_sql_rpa360["servidor"],
-            base_datos=cfg_sql_rpa360["base_datos"],
-            usuario=cfg_sql_rpa360["usuario"],
-            contrasena=cfg_sql_rpa360["contrasena"],
-            db_config_prefix="SQL_RPA360",
-        )
-
         mapa_robots = ConfigManager.get_mapa_robots()
 
-        return {"db_sam": db_sam, "db_rpa360": db_rpa360, "mapa_robots": mapa_robots}
+        # Inyectar las dependencias en la fábrica de proveedores
+        self.proveedores_carga = ProveedorCargaFactory.crear_proveedores(
+            config_proveedores=nombres_proveedores,
+            db_sam=self.db_sam,
+            db_rpa360=self.db_rpa360,
+            mapa_robots=mapa_robots,
+        )
+
+        # Inyectar las dependencias en la clase de algoritmo
+        self.algoritmo = Balanceo(
+            db_connector=self.db_sam, notificador=self.notificador, config_balanceador=self.cfg_balanceador_specifics
+        )
+
+        # --- 4. Configuración del ciclo de vida ---
+        self._shutdown_event = threading.Event()
+        self._is_shutting_down = False
+        self.intervalo_ciclo = self.cfg_balanceador_specifics.get("intervalo_ciclo_seg", 120)
+        schedule.every(self.intervalo_ciclo).seconds.do(self.ejecutar_ciclo_balanceo)
+        logger.info(f"Servicio configurado para ejecutarse cada {self.intervalo_ciclo} segundos.")
 
     def _validar_configuracion_critica(self):
-        """Valida que todas las variables de entorno críticas existan."""
-        logger.info("Validando configuración crítica para el servicio Balanceador...")
-        required_keys = ["intervalo_ciclo_seg", "proveedores_carga", "cooling_period_seg"]
-        missing_keys = [key for key in required_keys if key not in self.cfg_balanceador_specifics]
-        if missing_keys:
-            raise ValueError(f"Configuración crítica del Balanceador faltante: {', '.join(missing_keys).upper()}")
-        logger.info("Validación de configuración completada.")
+        """Valida que la configuración esencial esté presente."""
+        if not self.cfg_balanceador_specifics.get("proveedores_carga"):
+            raise ValueError("La variable de entorno 'BALANCEADOR_PROVEEDORES_CARGA' es obligatoria.")
 
     def run(self):
-        """Inicia la ejecución del servicio, con un primer ciclo inmediato."""
-        logger.info("El servicio está activo.")
-        logger.info("Ejecutando el primer ciclo de balanceo de forma inmediata...")
-        self._execute_cycle()
-        logger.info("Primer ciclo completado. Iniciando ciclos programados.")
-
+        """Inicia el bucle principal del servicio."""
+        logger.info("El servicio Balanceador ha iniciado. Esperando la primera ejecución programada...")
         while not self._shutdown_event.is_set():
-            self.scheduler.run_pending()
-            self._shutdown_event.wait(1)
+            schedule.run_pending()
+            time.sleep(1)
+        logger.info("Bucle principal del Balanceador finalizado.")
 
     def stop(self):
         """Detiene el servicio de forma ordenada."""
-        logger.info("Señal de parada recibida para el Balanceador.")
-        self._shutdown_event.set()
+        if not self._is_shutting_down:
+            logger.info("Recibida señal de parada. Finalizando el ciclo actual y deteniendo el servicio...")
+            self._is_shutting_down = True
+            self._shutdown_event.set()
 
-    def _execute_cycle(self):
+    def ejecutar_ciclo_balanceo(self):
         """Ejecuta un único ciclo completo del algoritmo de balanceo."""
-        if self._shutdown_event.is_set():
+        if self._is_shutting_down:
+            logger.info("Omitiendo ciclo de balanceo debido a una señal de parada.")
             return
 
-        logger.info("=" * 20 + " INICIANDO CICLO DE BALANCEO " + "=" * 20)
+        logger.info("*" * 20 + " INICIANDO NUEVO CICLO DE BALANCEO " + "*" * 20)
         try:
             carga_consolidada = self._obtener_carga_de_trabajo_consolidada()
-            if self._shutdown_event.is_set():
-                return
-
             pools_activos = self.obtener_pools_activos()
-            if self._shutdown_event.is_set():
-                return
-
-            self.balanceo_logic.ejecutar_algoritmo_completo(carga_consolidada, pools_activos)
-
+            self.algoritmo.ejecutar_algoritmo_completo(carga_consolidada, pools_activos)
         except Exception as e:
-            logger.critical(f"Error inesperado durante el ciclo de balanceo: {e}", exc_info=True)
+            logger.error(f"Error inesperado en el ciclo de balanceo: {e}", exc_info=True)
             self.notificador.send_alert(
-                "Error Crítico en Balanceador",
-                f"Excepción no controlada: {e}\n\nTraceback:\n{logging.traceback.format_exc()}",
+                subject="Error Crítico en Ciclo de Balanceo",
+                message=f"Se produjo un error no controlado en el ciclo principal.\n\nError: {e}",
             )
         finally:
-            logger.info("=" * 20 + " CICLO DE BALANCEO COMPLETADO " + "=" * 20)
+            logger.info("*" * 22 + " FIN DEL CICLO DE BALANCEO " + "*" * 23 + "\n")
 
     def _obtener_carga_de_trabajo_consolidada(self) -> Dict[int, int]:
-        """Obtiene la carga de todos los proveedores en paralelo y la consolida."""
+        """Obtiene y consolida la carga de trabajo de todos los proveedores activos."""
+        if not self.proveedores_carga:
+            logger.warning("No hay proveedores de carga configurados.")
+            return {}
+
         carga_total: Dict[int, int] = {}
+        max_workers = max(len(self.proveedores_carga), 1)
 
-        with ThreadPoolExecutor(max_workers=len(self.proveedores_carga) or 1) as executor:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_provider = {executor.submit(p.obtener_carga): p for p in self.proveedores_carga}
-
             for future in future_to_provider:
                 provider = future_to_provider[future]
                 try:
