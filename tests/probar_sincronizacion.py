@@ -13,7 +13,7 @@ try:
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
 
-    from sam.common.utils.config_loader import ConfigLoader
+    from sam.common.config_loader import ConfigLoader
 
     ConfigLoader.initialize_service("lanzador", __file__)
 
@@ -22,11 +22,11 @@ except Exception as e:
     sys.exit(1)
 
 # --- Importaciones de los componentes necesarios ---
-from sam.common.clients.aa_client import AutomationAnywhereClient
-from sam.common.database.sql_client import DatabaseConnector
-from sam.common.utils.config_manager import ConfigManager
-from sam.common.utils.logging_setup import setup_logging
-from .service.sincronizador import Sincronizador
+from sam.common.a360_client import AutomationAnywhereClient
+from sam.common.config_manager import ConfigManager
+from sam.common.database import DatabaseConnector
+from sam.common.logging_setup import setup_logging
+from sam.lanzador.service.sincronizador import Sincronizador
 
 
 async def main():

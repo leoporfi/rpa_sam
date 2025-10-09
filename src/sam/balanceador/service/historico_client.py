@@ -1,4 +1,4 @@
-# SAM/src/balanceador/database/historico_client.py
+# SAM/src/sam/balanceador/service/historico_client.py
 
 import logging
 from typing import Optional

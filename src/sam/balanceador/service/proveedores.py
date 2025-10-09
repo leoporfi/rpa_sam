@@ -1,10 +1,11 @@
-# SAM/src/balanceador/service/proveedores.py
+# SAM/src/sam/balanceador/service/proveedores.py
 import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
 from sam.common.database import DatabaseConnector
-from ..clients.clouders_client import CloudersClient
+
+from .clouders_client import CloudersClient
 
 logger = logging.getLogger(__name__)
 
