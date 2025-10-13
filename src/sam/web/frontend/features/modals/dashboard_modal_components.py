@@ -218,7 +218,9 @@ def RobotEditModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_suc
                                     "min": "1",
                                     "max": "100",
                                     "value": form_data.get("TicketsPorEquipoAdicional", ""),
-                                    "onChange": lambda e: handle_form_change("TicketsPorEquipoAdicional", e["target"]["value"]),
+                                    "onChange": lambda e: handle_form_change(
+                                        "TicketsPorEquipoAdicional", e["target"]["value"]
+                                    ),
                                     "style": {"flexGrow": "1"},
                                 }
                             ),
@@ -229,8 +231,19 @@ def RobotEditModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_suc
             html.footer(
                 html.div(
                     {"className": "grid"},
-                    html.button({"type": "button", "className": "secondary", "onClick": on_close, "disabled": is_loading}, "Cancelar"),
-                    html.button({"type": "submit", "form": "robot-form", "aria-busy": str(is_loading).lower(), "disabled": is_loading}, "Guardar"),
+                    html.button(
+                        {"type": "button", "className": "secondary", "onClick": on_close, "disabled": is_loading},
+                        "Cancelar",
+                    ),
+                    html.button(
+                        {
+                            "type": "submit",
+                            "form": "robot-form",
+                            "aria-busy": str(is_loading).lower(),
+                            "disabled": is_loading,
+                        },
+                        "Guardar",
+                    ),
                 )
             ),
         ),
@@ -306,12 +319,16 @@ def DeviceList(
                                     {
                                         "type": "checkbox",
                                         "checked": device["EquipoId"] in selected_ids,
-                                        "onChange": lambda e, eid=device["EquipoId"]: handle_select_one(eid, e["target"]["checked"]),
+                                        "onChange": lambda e, eid=device["EquipoId"]: handle_select_one(
+                                            eid, e["target"]["checked"]
+                                        ),
                                     }
                                 )
                             ),
                             html.td(device["Equipo"]),
-                            html.td(html.span({"className": f"tag {get_estado(device)[1]}"}, get_estado(device)[0])) if has_status_column else None,
+                            html.td(html.span({"className": f"tag {get_estado(device)[1]}"}, get_estado(device)[0]))
+                            if has_status_column
+                            else None,
                         )
                         for device in devices
                     ]
@@ -368,10 +385,13 @@ def AssignmentsModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_s
 
     # --- LÓGICA DE FILTRADO ---
     filtered_assigned = use_memo(
-        lambda: [device for device in assigned_devices if search_assigned.lower() in device.get("Equipo", "").lower()], [assigned_devices, search_assigned]
+        lambda: [device for device in assigned_devices if search_assigned.lower() in device.get("Equipo", "").lower()],
+        [assigned_devices, search_assigned],
     )
     filtered_available = use_memo(
-        lambda: [device for device in available_devices if search_available.lower() in device.get("Equipo", "").lower()],
+        lambda: [
+            device for device in available_devices if search_available.lower() in device.get("Equipo", "").lower()
+        ],
         [available_devices, search_available],
     )
 
@@ -414,7 +434,10 @@ def AssignmentsModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_s
             ),
             # <<-- CAMBIO: Layout de 3 columnas: Disponible | Botones | Asignado -->>
             html.div(
-                {"className": "grid", "style": {"gridTemplateColumns": "5fr 1fr 5fr", "alignItems": "center", "gap": "1rem"}},
+                {
+                    "className": "grid",
+                    "style": {"gridTemplateColumns": "5fr 1fr 5fr", "alignItems": "center", "gap": "1rem"},
+                },
                 DeviceList(
                     title="Equipos Disponibles",
                     devices=filtered_available,
@@ -467,7 +490,9 @@ def AssignmentsModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_s
             ),
             html.footer(
                 html.button({"className": "secondary", "onClick": on_close, "disabled": is_loading}, "Cancelar"),
-                html.button({"aria-busy": str(is_loading).lower(), "onClick": handle_save, "disabled": is_loading}, "Guardar"),
+                html.button(
+                    {"aria-busy": str(is_loading).lower(), "onClick": handle_save, "disabled": is_loading}, "Guardar"
+                ),
             ),
         ),
     )
@@ -592,13 +617,17 @@ def SchedulesModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_suc
                     on_change=handle_form_change,
                 ),
             ),
-            html.footer(html.button({"onClick": lambda e: handle_new_click()}, "Crear nueva programación")) if view_mode == "list" else None,
+            html.footer(html.button({"onClick": lambda e: handle_new_click()}, "Crear nueva programación"))
+            if view_mode == "list"
+            else None,
         ),
     )
 
 
 @component
-def SchedulesList(api_service: ApiClient, schedules: List[Dict], robot_id: int, on_edit: Callable, on_delete_success: Callable):
+def SchedulesList(
+    api_service: ApiClient, schedules: List[Dict], robot_id: int, on_edit: Callable, on_delete_success: Callable
+):
     def format_schedule_details(schedule):
         details = f"{schedule.get('TipoProgramacion', 'N/A')} a las {schedule.get('HoraInicio', '')}"
         tipo = schedule.get("TipoProgramacion")
@@ -650,7 +679,9 @@ def DeleteButton(api_service: ApiClient, schedule_id: int, robot_id: int, on_del
             return
         set_is_deleting(True)
         try:
-            await api_service.delete_schedule(robot_id, schedule_id)
+            # RFR-08: Corregida la llamada para que coincida con la nueva firma
+            # del 'api_client', que solo requiere 'schedule_id'.
+            await api_service.delete_schedule(schedule_id)
             show_notification("Programación eliminada.", "success")
             await on_delete_success()
         except Exception as e:
@@ -659,14 +690,28 @@ def DeleteButton(api_service: ApiClient, schedule_id: int, robot_id: int, on_del
             set_is_deleting(False)
 
     handle_click = use_callback(delete_schedule, [schedule_id, robot_id, is_deleting])
-    return html.button({"className": "secondary outline", "onClick": handle_click, "disabled": is_deleting, "aria-busy": is_deleting}, "Eliminar")
+    return html.button(
+        {"className": "secondary outline", "onClick": handle_click, "disabled": is_deleting, "aria-busy": is_deleting},
+        "Eliminar",
+    )
 
 
 @component
-def ScheduleForm(form_data: Dict, available_devices: List[Dict], is_loading: bool, on_submit: Callable, on_cancel: Callable, on_change: Callable):
+def ScheduleForm(
+    form_data: Dict,
+    available_devices: List[Dict],
+    is_loading: bool,
+    on_submit: Callable,
+    on_cancel: Callable,
+    on_change: Callable,
+):
     tipo = form_data.get("TipoProgramacion")
     schedule_options = use_memo(
-        lambda: [html.option({"value": schedule_type, "key": schedule_type}, schedule_type) for schedule_type in SCHEDULE_TYPES], []
+        lambda: [
+            html.option({"value": schedule_type, "key": schedule_type}, schedule_type)
+            for schedule_type in SCHEDULE_TYPES
+        ],
+        [],
     )
 
     def handle_form_change(field, value):
@@ -680,7 +725,10 @@ def ScheduleForm(form_data: Dict, available_devices: List[Dict], is_loading: boo
             {"id": "schedule-form", "onSubmit": event(on_submit, prevent_default=True)},
             html.label(
                 "Tipo de Programación",
-                html.select({"value": tipo, "onChange": lambda e: handle_form_change("TipoProgramacion", e["target"]["value"])}, *schedule_options),
+                html.select(
+                    {"value": tipo, "onChange": lambda e: handle_form_change("TipoProgramacion", e["target"]["value"])},
+                    *schedule_options,
+                ),
             ),
             html.div(
                 {"className": "grid"},
@@ -702,7 +750,9 @@ def ScheduleForm(form_data: Dict, available_devices: List[Dict], is_loading: boo
                             "min": "0",
                             "max": "60",
                             "value": form_data.get("Tolerancia"),
-                            "onChange": lambda e: handle_form_change("Tolerancia", int(e["target"]["value"]) if e["target"]["value"] else 0),
+                            "onChange": lambda e: handle_form_change(
+                                "Tolerancia", int(e["target"]["value"]) if e["target"]["value"] else 0
+                            ),
                         }
                     ),
                 ),
@@ -713,8 +763,19 @@ def ScheduleForm(form_data: Dict, available_devices: List[Dict], is_loading: boo
         html.footer(
             html.div(
                 {"className": "grid"},
-                html.button({"type": "button", "className": "secondary", "onClick": lambda e: on_cancel(), "disabled": is_loading}, "Cancelar"),
-                html.button({"type": "submit", "form": "schedule-form", "disabled": is_loading, "aria-busy": is_loading}, "Guardar"),
+                html.button(
+                    {
+                        "type": "button",
+                        "className": "secondary",
+                        "onClick": lambda e: on_cancel(),
+                        "disabled": is_loading,
+                    },
+                    "Cancelar",
+                ),
+                html.button(
+                    {"type": "submit", "form": "schedule-form", "disabled": is_loading, "aria-busy": is_loading},
+                    "Guardar",
+                ),
             )
         ),
     )
@@ -726,7 +787,11 @@ def ConditionalFields(tipo: str, form_data: Dict, on_change: Callable):
         return html.label(
             "Días (ej: Lu,Ma,Mi)",
             html.input(
-                {"type": "text", "value": form_data.get("DiasSemana", ""), "onChange": lambda e: on_change("DiasSemana", e["target"]["value"])}
+                {
+                    "type": "text",
+                    "value": form_data.get("DiasSemana", ""),
+                    "onChange": lambda e: on_change("DiasSemana", e["target"]["value"]),
+                }
             ),
         )
     elif tipo == "Mensual":
@@ -738,7 +803,9 @@ def ConditionalFields(tipo: str, form_data: Dict, on_change: Callable):
                     "min": 1,
                     "max": 31,
                     "value": form_data.get("DiaDelMes", 1),
-                    "onChange": lambda e: on_change("DiaDelMes", int(e["target"]["value"]) if e["target"]["value"] else 1),
+                    "onChange": lambda e: on_change(
+                        "DiaDelMes", int(e["target"]["value"]) if e["target"]["value"] else 1
+                    ),
                 }
             ),
         )
@@ -775,7 +842,12 @@ def DeviceSelector(available_devices: List[Dict], selected_devices: List[int], o
         on_change(list(current_devices))
 
     return html.fieldset(
-        html.label(html.input({"type": "checkbox", "checked": are_all_devices_selected, "onChange": handle_select_all_devices}), "Asignar Equipos"),
+        html.label(
+            html.input(
+                {"type": "checkbox", "checked": are_all_devices_selected, "onChange": handle_select_all_devices}
+            ),
+            "Asignar Equipos",
+        ),
         html.div(
             {"style": {"maxHeight": "200px", "overflowY": "auto"}},
             *[
@@ -785,7 +857,9 @@ def DeviceSelector(available_devices: List[Dict], selected_devices: List[int], o
                         {
                             "type": "checkbox",
                             "checked": device["EquipoId"] in selected_devices_set,
-                            "onChange": lambda e, tid=device["EquipoId"]: handle_device_select(tid, e["target"]["checked"]),
+                            "onChange": lambda e, tid=device["EquipoId"]: handle_device_select(
+                                tid, e["target"]["checked"]
+                            ),
                         }
                     ),
                     device["Equipo"],

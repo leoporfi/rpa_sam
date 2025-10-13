@@ -78,11 +78,9 @@ def App():
             set_selected_robot({})
             set_modal_view("edit")
 
-        # RFR-01: Se convierte la función en async para que la cadena de llamadas sea explícita.
         async def handle_robot_action(action: str, robot):
             if action in ["toggle_active", "toggle_online"]:
                 status_key = "Activo" if action == "toggle_active" else "EsOnline"
-                # RFR-01: Se añade 'await' para esperar a que la operación de API finalice.
                 await robots_state["update_robot_status"](robot["RobotId"], {status_key: not robot[status_key]})
             else:
                 set_selected_robot(robot)
@@ -99,10 +97,18 @@ def App():
             on_create_robot=handle_create_robot,
             search_term=search_input,
             on_search_change=set_search_input,
-            active_filter="all" if robots_state["filters"].get("active") is None else str(robots_state["filters"].get("active")).lower(),
-            on_active_change=lambda value: robots_state["set_filters"](lambda prev: {**prev, "active": None if value == "all" else value == "true"}),
-            online_filter="all" if robots_state["filters"].get("online") is None else str(robots_state["filters"].get("online")).lower(),
-            on_online_change=lambda value: robots_state["set_filters"](lambda prev: {**prev, "online": None if value == "all" else value == "true"}),
+            active_filter="all"
+            if robots_state["filters"].get("active") is None
+            else str(robots_state["filters"].get("active")).lower(),
+            on_active_change=lambda value: robots_state["set_filters"](
+                lambda prev: {**prev, "active": None if value == "all" else value == "true"}
+            ),
+            online_filter="all"
+            if robots_state["filters"].get("online") is None
+            else str(robots_state["filters"].get("online")).lower(),
+            on_online_change=lambda value: robots_state["set_filters"](
+                lambda prev: {**prev, "online": None if value == "all" else value == "true"}
+            ),
             is_searching=is_searching,
         )
 
@@ -110,18 +116,24 @@ def App():
             page_controls,
             RobotDashboard(
                 robots=robots_state["robots"],
-                on_action=lambda action, robot: handle_robot_action(action, robot),
+                on_action=handle_robot_action,  # Se pasa la corutina directamente
                 robots_state=robots_state,
                 set_current_page=robots_state["set_current_page"],
             ),
             RobotEditModal(
-                robot=selected_robot if modal_view == "edit" else None, on_close=handle_modal_close, on_save_success=handle_save_and_refresh
+                robot=selected_robot if modal_view == "edit" else None,
+                on_close=handle_modal_close,
+                on_save_success=handle_save_and_refresh,
             ),
             AssignmentsModal(
-                robot=selected_robot if modal_view == "assign" else None, on_close=handle_modal_close, on_save_success=handle_save_and_refresh
+                robot=selected_robot if modal_view == "assign" else None,
+                on_close=handle_modal_close,
+                on_save_success=handle_save_and_refresh,
             ),
             SchedulesModal(
-                robot=selected_robot if modal_view == "schedule" else None, on_close=handle_modal_close, on_save_success=handle_save_and_refresh
+                robot=selected_robot if modal_view == "schedule" else None,
+                on_close=handle_modal_close,
+                on_save_success=handle_save_and_refresh,
             ),
         )
 
@@ -177,9 +189,13 @@ def App():
                 loading=pools_state["loading"],
                 error=pools_state["error"],
             ),
-            PoolEditModal(pool=modal_pool if modal_view == "edit" else None, on_close=handle_modal_close, on_save=handle_save_pool),
+            PoolEditModal(
+                pool=modal_pool if modal_view == "edit" else None, on_close=handle_modal_close, on_save=handle_save_pool
+            ),
             PoolAssignmentsModal(
-                pool=modal_pool if modal_view == "assign" else None, on_close=handle_modal_close, on_save_success=pools_state["refresh"]
+                pool=modal_pool if modal_view == "assign" else None,
+                on_close=handle_modal_close,
+                on_save_success=pools_state["refresh"],
             ),
             ConfirmationModal(
                 is_open=bool(pool_to_delete),
@@ -222,7 +238,9 @@ head = html.head(
     html.meta({"charset": "utf-8"}),
     html.meta({"name": "viewport", "content": "width=device-width, initial-scale=1"}),
     html.link({"rel": "stylesheet", "href": "/static/css/pico.violet.min.css"}),
-    html.link({"rel": "stylesheet", "href": "https://cdn.jsdelivr.net/npm/@picocss/pico@2.1.1/css/pico.colors.min.css"}),
+    html.link(
+        {"rel": "stylesheet", "href": "https://cdn.jsdelivr.net/npm/@picocss/pico@2.1.1/css/pico.colors.min.css"}
+    ),
     html.link({"rel": "stylesheet", "href": "/static/css/all.min.css"}),
     html.link({"rel": "stylesheet", "href": "https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined"}),
     html.link({"rel": "stylesheet", "href": "/static/custom.css"}),

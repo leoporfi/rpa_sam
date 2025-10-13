@@ -9,7 +9,12 @@
   --pico-font-size: 0.98rem;
 }
 
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   --pico-font-weight: 700;
 }
 
@@ -32,11 +37,11 @@ button {
 }
 
 [data-theme="dark"] .sticky-header {
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
 .page-controls-container {
-    padding-top: var(--pico-spacing);
+  padding-top: var(--pico-spacing);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -45,57 +50,70 @@ button {
 
 /* --- Interruptor de Tema --- */
 .theme-switcher {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 /* --- Notificaciones (Toast) --- */
 .toast-container {
-    position: fixed;
-    top: 1rem;
-    right: 1rem;
-    z-index: 9999;
-    width: 380px;
-    max-width: calc(100vw - 2rem);
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 9999;
+  width: 380px;
+  max-width: calc(100vw - 2rem);
 }
 .toast-stack {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 .toast {
-    opacity: 0;
-    transform: translateX(100%);
-    transition: opacity 0.3s ease, transform 0.3s ease;
+  opacity: 0;
+  transform: translateX(100%);
+  transition: opacity 0.3s ease, transform 0.3s ease;
 }
 .toast.show {
-    opacity: 1;
-    transform: translateX(0);
+  opacity: 1;
+  transform: translateX(0);
 }
-.toast-success { border-left: 4px solid var(--pico-color-green-500); }
-.toast-error { border-left: 4px solid var(--pico-color-red-500); }
-.toast-warning { border-left: 4px solid var(--pico-color-orange-500); }
-.toast-info { border-left: 4px solid var(--pico-color-blue-500); }
+.toast-success {
+  border-left: 4px solid var(--pico-color-green-500);
+}
+.toast-error {
+  border-left: 4px solid var(--pico-color-red-500);
+}
+.toast-warning {
+  border-left: 4px solid var(--pico-color-orange-500);
+}
+.toast-info {
+  border-left: 4px solid var(--pico-color-blue-500);
+}
 
 /* --- Modales --- */
 dialog[open] {
-    z-index: 1100; /* Asegura que esté por encima del sticky-header */
+  z-index: 1100; /* Asegura que esté por encima del sticky-header */
 }
 
 /* -------------------------------------------------------------------------- */
 /* COMPONENTES DE DASHBOARD ROBOTS                      */
 /* -------------------------------------------------------------------------- */
 
+/* --- Contenedor de Controles --- */
+.dashboard-controls {
+  margin-bottom: var(--pico-typography-spacing-vertical); /* Añade espacio debajo de los controles */
+}
+
 /* --- Controles Colapsables (Móvil) --- */
 .mobile-controls-toggle {
-    display: none; /* Oculto por defecto */
+  display: none; /* Oculto por defecto */
 }
 
 /* --- Grid Principal de Controles --- */
 .master-controls-grid {
-    display: grid;
-    gap: 1rem;
+  display: grid;
+  gap: 1rem;
 }
 
 /* --- Botón "Ghost" Secundario --- */
@@ -115,73 +133,78 @@ dialog[open] {
 
 /* --- Estilos por defecto (Móvil: < 768px) --- */
 .table-container {
-    display: none;
+  display: none;
 }
 .cards-container {
-    display: grid;
-    gap: 1rem;
-    grid-template-columns: 1fr; /* 1 columna por defecto */
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr; /* 1 columna por defecto */
 }
 
 /* Corregir texto ilegible en tarjetas */
-.robot-card-header h5, .pool-card h5 {
-    overflow-wrap: break-word;
-    word-break: break-all;
+.robot-card-header h5,
+.pool-card h5 {
+  overflow-wrap: break-word;
+  word-break: break-all;
 }
 
 .mobile-controls-toggle {
-    display: block; /* Visible en móvil */
+  display: block; /* Visible en móvil */
 }
 .collapsible-panel {
-    display: none; /* Oculto por defecto en móvil */
+  display: none; /* Oculto por defecto en móvil */
 }
 .collapsible-panel.is-expanded {
-    display: flex; /* Se muestra al expandir */
-    flex-direction: column;
-    gap: 1rem;
+  display: flex; /* Se muestra al expandir */
+  flex-direction: column;
+  gap: 1rem;
 }
 .master-controls-grid {
-    display: flex;
-    flex-direction: column;
-    grid-template-columns: 2fr 1fr 1fr 0.7fr 0.7fr;
+  display: flex;
+  flex-direction: column;
 }
-.filters-container, .buttons-container {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
+.filters-container,
+.buttons-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
 }
-
 
 /* --- Estilos para Tablets (768px - 1023px) --- */
 @media (min-width: 768px) {
-    .robot-cards, .pool-cards {
-        grid-template-columns: 1fr 1fr; /* 2 columnas para tablets */
-    }
+  .robot-cards,
+  .pool-cards {
+    grid-template-columns: 1fr 1fr; /* 2 columnas para tablets */
+  }
 }
-
 
 /* --- Estilos para Escritorio (>= 1024px) --- */
 @media (min-width: 1024px) {
-    .table-container {
-        display: block;
-    }
-    .cards-container {
-        display: none;
-    }
-    .mobile-controls-toggle {
-        display: none; /* Se oculta en escritorio */
-    }
-    .collapsible-panel {
-        display: block; /* Siempre visible en escritorio */
-    }
-    .master-controls-grid {
-        display: grid;
-        grid-template-columns: 2fr 1fr 1fr; /* Buscador | Filtros | Botones */
-        gap: 1rem;
-        align-items: center;
-    }
-    .search-input { grid-column: 1 / 2; }
-    .filters-container { grid-column: 2 / 3; }
-    .buttons-container { grid-column: 3 / 4; }
+  .table-container {
+    display: block;
+  }
+  .cards-container {
+    display: none;
+  }
+  .mobile-controls-toggle {
+    display: none; /* Se oculta en escritorio */
+  }
+  .collapsible-panel {
+    display: block; /* Siempre visible en escritorio */
+  }
+  .master-controls-grid {
+    display: grid;
+    /* Define 5 columnas: para el buscador, 2 filtros y 2 botones */
+    grid-template-columns: 3fr repeat(2, 2fr) repeat(2, 1.5fr);
+    gap: 1rem;
+    align-items: center; /* Alinea verticalmente los elementos al centro */
+  }
+
+  /* RFR-10: Estira los botones para que ocupen toda la altura de la celda */
+  .master-controls-grid > button {
+    height: 100%;
+    display: grid;
+    place-content: center;
+  }
 }
 

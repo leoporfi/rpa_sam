@@ -60,9 +60,9 @@ def get_robots(
         SELECT
             r.RobotId, r.Robot, r.Descripcion, r.MinEquipos, r.MaxEquipos,
             r.EsOnline, r.Activo, r.PrioridadBalanceo,
-            r.TicketsPorEquipoAdicional, 
+            r.TicketsPorEquipoAdicional,
             ISNULL(ea.Equipos, 0) as CantidadEquiposAsignados,
-            CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.Programaciones p WHERE p.RobotId = r.RobotId AND p.Activo = 1) 
+            CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.Programaciones p WHERE p.RobotId = r.RobotId AND p.Activo = 1)
                  THEN 1 ELSE 0 END AS BIT) AS TieneProgramacion
         {select_from_clause}
         {where_clause}
@@ -144,7 +144,17 @@ def update_asignaciones_robot(
     if not robot_info:
         raise ValueError("Robot no encontrado")
 
-    return db.actualizar_asignaciones_robot(robot_id, assign_ids, unassign_ids)
+    # Adaptado para que la lógica de negocio resida en el SP
+    assign_tvp = [(id,) for id in assign_ids]
+    unassign_tvp = [(id,) for id in unassign_ids]
+
+    query = "EXEC dbo.ActualizarAsignacionesManuales @RobotId=?, @EquiposAsignar=?, @EquiposDesasignar=?"
+    params = (robot_id, assign_tvp, unassign_tvp)
+
+    # Suponiendo que el SP devuelve un resultado o simplemente se ejecuta
+    db.ejecutar_consulta(query, params, es_select=False)
+
+    return {"message": "Asignaciones actualizadas correctamente."}
 
 
 def get_available_teams_for_robot(db: DatabaseConnector, robot_id: int) -> List[Dict]:
@@ -163,61 +173,46 @@ def get_available_teams_for_robot(db: DatabaseConnector, robot_id: int) -> List[
 
 
 # Programaciones
+def get_all_schedules(db: DatabaseConnector) -> List[Dict]:
+    """Obtiene todas las programaciones."""
+    return db.ejecutar_consulta("EXEC dbo.ListarProgramaciones", es_select=True)
+
+
 def get_schedules_for_robot(db: DatabaseConnector, robot_id: int) -> List[Dict]:
-    query_schedules = "SELECT * FROM dbo.Programaciones WHERE RobotId = ? ORDER BY HoraInicio"
-    schedules = db.ejecutar_consulta(query_schedules, (robot_id,), es_select=True)
-
-    if not schedules:
-        return []
-
-    schedule_ids = [s["ProgramacionId"] for s in schedules]
-    placeholders = ",".join("?" for _ in schedule_ids)
-
-    query_teams = f"""
-        SELECT a.ProgramacionId, e.EquipoId, e.Equipo
-        FROM dbo.Asignaciones a
-        JOIN dbo.Equipos e ON a.EquipoId = e.EquipoId
-        WHERE a.ProgramacionId IN ({placeholders}) AND a.EsProgramado = 1
-    """
-    team_assignments = db.ejecutar_consulta(query_teams, tuple(schedule_ids), es_select=True)
-
-    teams_map = {}
-    for assignment in team_assignments:
-        pid = assignment["ProgramacionId"]
-        if pid not in teams_map:
-            teams_map[pid] = []
-        teams_map[pid].append({"EquipoId": assignment["EquipoId"], "Equipo": assignment["Equipo"]})
-
-    for schedule in schedules:
-        schedule["Equipos"] = teams_map.get(schedule["ProgramacionId"], [])
-
-    return schedules
+    """Obtiene programaciones para un robot específico."""
+    query_schedules = "EXEC dbo.ListarProgramacionesPorRobot @RobotId = ?"
+    return db.ejecutar_consulta(query_schedules, (robot_id,), es_select=True)
 
 
-def delete_schedule_full(db: DatabaseConnector, programacion_id: int, robot_id: int):
+def delete_schedule_full(db: DatabaseConnector, programacion_id: int):
+    """Elimina una programación y sus asignaciones asociadas."""
+    # Primero, obtenemos el RobotId para pasarlo al SP, manteniendo la lógica del SP intacta
+    robot_id_result = db.ejecutar_consulta(
+        "SELECT RobotId FROM dbo.Programaciones WHERE ProgramacionId = ?",
+        (programacion_id,),
+        es_select=True,
+    )
+    if not robot_id_result:
+        raise ValueError(f"No se encontró la programación con ID {programacion_id}")
+
+    robot_id = robot_id_result[0]["RobotId"]
     query = "EXEC dbo.EliminarProgramacionCompleta @ProgramacionId = ?, @RobotId = ?"
     db.ejecutar_consulta(query, (programacion_id, robot_id), es_select=False)
 
 
 def create_new_schedule(db: DatabaseConnector, data: ScheduleData):
-    """
-    Crea una nueva programación llamando al Stored Procedure unificado y eficiente
-    'CrearProgramacion'.
-    """
-    # 1. Obtener los nombres de los equipos a partir de sus IDs.
-    #    STRING_AGG es una forma eficiente de hacer esto en la BD.
+    """Crea una nueva programación llamando al SP unificado."""
     equipos_str = ""
     if data.Equipos:
         placeholders = ",".join("?" for _ in data.Equipos)
-        equipos_nombres_result = db.ejecutar_consulta(
+        nombres_result = db.ejecutar_consulta(
             f"SELECT STRING_AGG(Equipo, ',') AS Nombres FROM dbo.Equipos WHERE EquipoId IN ({placeholders})",
             tuple(data.Equipos),
             es_select=True,
         )
-        if equipos_nombres_result and equipos_nombres_result[0]["Nombres"]:
-            equipos_str = equipos_nombres_result[0]["Nombres"]
+        if nombres_result and nombres_result[0]["Nombres"]:
+            equipos_str = nombres_result[0]["Nombres"]
 
-    # 2. Obtener el nombre del robot a partir de su ID.
     robot_nombre_result = db.ejecutar_consulta(
         "SELECT Robot FROM dbo.Robots WHERE RobotId = ?", (data.RobotId,), es_select=True
     )
@@ -225,7 +220,6 @@ def create_new_schedule(db: DatabaseConnector, data: ScheduleData):
         raise ValueError(f"No se encontró un robot con el ID {data.RobotId}")
     robot_str = robot_nombre_result[0]["Robot"]
 
-    # 3. Preparar los parámetros para el SP 'CrearProgramacion'.
     query = "EXEC dbo.CrearProgramacion @Robot=?, @Equipos=?, @TipoProgramacion=?, @HoraInicio=?, @Tolerancia=?, @DiasSemana=?, @DiaDelMes=?, @FechaEspecifica=?"
     params = (
         robot_str,
@@ -237,60 +231,7 @@ def create_new_schedule(db: DatabaseConnector, data: ScheduleData):
         data.DiaDelMes,
         data.FechaEspecifica,
     )
-
-    # 4. Ejecutar el Stored Procedure.
     db.ejecutar_consulta(query, params, es_select=False)
-
-
-def create_new_schedule_old(db: DatabaseConnector, data: ScheduleData):
-    equipos_nombres_result = db.ejecutar_consulta(
-        f"SELECT STRING_AGG(Equipo, ',') AS Nombres FROM dbo.Equipos WHERE EquipoId IN ({','.join('?' for _ in data.Equipos)})",
-        tuple(data.Equipos),
-        es_select=True,
-    )
-    equipos_str = (
-        equipos_nombres_result[0]["Nombres"] if equipos_nombres_result and equipos_nombres_result[0]["Nombres"] else ""
-    )
-
-    robot_nombre_result = db.ejecutar_consulta(
-        "SELECT Robot FROM dbo.Robots WHERE RobotId = ?", (data.RobotId,), es_select=True
-    )
-    robot_str = robot_nombre_result[0]["Robot"] if robot_nombre_result else ""
-
-    sp_map = {
-        "Diaria": ("dbo.CargarProgramacionDiaria", ["@Robot", "@Equipos", "@HoraInicio", "@Tolerancia"]),
-        "Semanal": (
-            "dbo.CargarProgramacionSemanal",
-            ["@Robot", "@Equipos", "@DiasSemana", "@HoraInicio", "@Tolerancia"],
-        ),
-        "Mensual": (
-            "dbo.CargarProgramacionMensual",
-            ["@Robot", "@Equipos", "@DiaDelMes", "@HoraInicio", "@Tolerancia"],
-        ),
-        "Especifica": (
-            "dbo.CargarProgramacionEspecifica",
-            ["@Robot", "@Equipos", "@FechaEspecifica", "@HoraInicio", "@Tolerancia"],
-        ),
-    }
-    if data.TipoProgramacion not in sp_map:
-        raise ValueError("Tipo de programación no válido")
-
-    sp_name, sp_param_names = sp_map[data.TipoProgramacion]
-    params_dict = {
-        "@Robot": robot_str,
-        "@Equipos": equipos_str,
-        "@HoraInicio": data.HoraInicio,
-        "@Tolerancia": data.Tolerancia,
-        "@DiasSemana": data.DiasSemana,
-        "@DiaDelMes": data.DiaDelMes,
-        "@FechaEspecifica": data.FechaEspecifica,
-    }
-
-    params_tuple = tuple(params_dict[p] for p in sp_param_names)
-    placeholders = ", ".join("?" for _ in params_tuple)
-    query = f"EXEC {sp_name} {placeholders}"
-
-    db.ejecutar_consulta(query, params_tuple, es_select=False)
 
 
 def update_existing_schedule(db: DatabaseConnector, programacion_id: int, data: ScheduleData):
@@ -308,7 +249,7 @@ def update_existing_schedule(db: DatabaseConnector, programacion_id: int, data: 
             else ""
         )
 
-    query = "EXEC dbo.ActualizarProgramacionCompleta ?, ?, ?, ?, ?, ?, ?, ?, ?"
+    query = "EXEC dbo.ActualizarProgramacionCompleta @ProgramacionId=?, @RobotId=?, @TipoProgramacion=?, @HoraInicio=?, @DiaSemana=?, @DiaDelMes=?, @FechaEspecifica=?, @Tolerancia=?, @Equipos=?"
     params = (
         programacion_id,
         data.RobotId,
@@ -325,108 +266,60 @@ def update_existing_schedule(db: DatabaseConnector, programacion_id: int, data: 
 
 # Pool
 def get_pools(db: DatabaseConnector) -> List[Dict]:
-    """
-    Obtiene la lista de todos los pools de recursos llamando al SP dbo.ListarPools.
-    """
-    sql = "EXEC dbo.ListarPools"
-    try:
-        pools = db.ejecutar_consulta(sql, es_select=True)
-        return pools
-    except Exception:
-        raise
+    """Obtiene la lista de pools llamando al SP."""
+    return db.ejecutar_consulta("EXEC dbo.ListarPools", es_select=True)
 
 
 def create_pool(db: DatabaseConnector, nombre: str, descripcion: Optional[str]) -> Dict:
-    """
-    Crea un nuevo pool llamando al SP dbo.CrearPool.
-    """
+    """Crea un nuevo pool llamando al SP."""
     sql = "EXEC dbo.CrearPool @Nombre = ?, @Descripcion = ?"
     params = (nombre, descripcion)
-    try:
-        new_pool_list = db.ejecutar_consulta(sql, params, es_select=True)
-        if not new_pool_list:
-            raise Exception("El Stored Procedure no devolvió el nuevo pool.")
-        new_pool = new_pool_list[0]
-        # Añadimos los contadores por defecto para consistencia con get_pools
-        new_pool["CantidadRobots"] = 0
-        new_pool["CantidadEquipos"] = 0
-        return new_pool
-    except Exception as e:
-        # Re-lanzamos la excepción para que la capa de API la maneje
-        raise
+    new_pool_list = db.ejecutar_consulta(sql, params, es_select=True)
+    if not new_pool_list:
+        raise Exception("El Stored Procedure no devolvió el nuevo pool.")
+    new_pool = new_pool_list[0]
+    new_pool["CantidadRobots"] = 0
+    new_pool["CantidadEquipos"] = 0
+    return new_pool
 
 
 def update_pool(db: DatabaseConnector, pool_id: int, nombre: str, descripcion: Optional[str]):
-    """
-    Actualiza un pool existente llamando al SP dbo.ActualizarPool.
-    El SP se encarga de la lógica y de lanzar errores si algo falla.
-    """
+    """Actualiza un pool existente llamando al SP."""
     sql = "EXEC dbo.ActualizarPool @PoolId = ?, @Nombre = ?, @Descripcion = ?"
     params = (pool_id, nombre, descripcion)
-    try:
-        db.ejecutar_consulta(sql, params, es_select=False)
-    except Exception as e:
-        raise e
+    db.ejecutar_consulta(sql, params, es_select=False)
 
 
 def delete_pool(db: DatabaseConnector, pool_id: int):
-    """
-    Elimina un pool existente llamando al SP dbo.EliminarPool.
-    """
+    """Elimina un pool existente llamando al SP."""
     sql = "EXEC dbo.EliminarPool @PoolId = ?"
-    try:
-        db.ejecutar_consulta(sql, (pool_id,), es_select=False)
-    except Exception as e:
-        raise e
+    db.ejecutar_consulta(sql, (pool_id,), es_select=False)
 
 
 def get_pool_assignments_and_available_resources(db: DatabaseConnector, pool_id: int) -> Dict:
-    """
-    Obtiene los recursos (robots/equipos) asignados a un pool y los que están disponibles.
-    Utiliza un SP que devuelve dos conjuntos de resultados.
-    """
+    """Obtiene los recursos asignados y disponibles para un pool."""
     sql = "EXEC dbo.ObtenerRecursosParaPool @PoolId = ?"
     params = (pool_id,)
-
-    assigned = []
-    available = []
-
-    try:
-        with db.obtener_cursor() as cursor:
-            cursor.execute(sql, params)
-
-            # Procesar el primer conjunto de resultados (asignados)
+    assigned, available = [], []
+    with db.obtener_cursor() as cursor:
+        cursor.execute(sql, params)
+        columns = [column[0] for column in cursor.description]
+        for row in cursor.fetchall():
+            assigned.append(dict(zip(columns, row)))
+        if cursor.nextset():
             columns = [column[0] for column in cursor.description]
             for row in cursor.fetchall():
-                assigned.append(dict(zip(columns, row)))
-
-            # Mover al siguiente conjunto de resultados (disponibles)
-            if cursor.nextset():
-                columns = [column[0] for column in cursor.description]
-                for row in cursor.fetchall():
-                    available.append(dict(zip(columns, row)))
-
-        return {"assigned": assigned, "available": available}
-
-    except Exception as e:
-        raise e
+                available.append(dict(zip(columns, row)))
+    return {"assigned": assigned, "available": available}
 
 
 def assign_resources_to_pool(db: DatabaseConnector, pool_id: int, robot_ids: List[int], equipo_ids: List[int]):
-    """
-    Llama al SP para asignar recursos a un pool usando TVPs.
-    """
-    # pyodbc espera una lista de tuplas para los TVP
+    """Llama al SP para asignar recursos a un pool usando TVPs."""
     robots_tvp = [(robot_id,) for robot_id in robot_ids]
-    equipos_tvp = [(equipo_ids,) for equipo_ids in equipo_ids]
-
+    equipos_tvp = [(equipo_id,) for equipo_id in equipo_ids]
     sql = "EXEC dbo.AsignarRecursosAPool @PoolId = ?, @RobotIds = ?, @EquipoIds = ?"
     params = (pool_id, robots_tvp, equipos_tvp)
-
-    try:
-        db.ejecutar_consulta(sql, params, es_select=False)
-    except Exception as e:
-        raise e
+    db.ejecutar_consulta(sql, params, es_select=False, es_tvp=True)
 
 
 # Sincronización con A360
@@ -434,75 +327,53 @@ async def sync_with_a360(db: DatabaseConnector) -> Dict:
     """
     Orquesta la sincronización de las tablas Robots y Equipos con A360.
     """
-    print("Iniciando la sincronización con A360...")
-
+    logger.info("Iniciando la sincronización con A360...")
     try:
-        # --- BLOQUE 1: Llamadas a la API de Automation Anywhere ---
-        print("Paso 1: Conectando con Automation Anywhere y obteniendo datos...")
         aa_config = ConfigManager.get_aa_config()
+        # RFR-04: Corregido el TypeError por argumentos duplicados.
+        # Se pasan los argumentos explícitamente en lugar de usar **aa_config,
+        # que creaba conflictos al pasar 'api_key' y otros valores dos veces.
         aa_client = AutomationAnywhereClient(
             control_room_url=aa_config["url_cr"],
             username=aa_config["usuario"],
-            password=aa_config.get("pwd"),  # Usar .get() para la contraseña opcional
-            **aa_config,  # Pasar el resto de la configuración
+            password=aa_config.get("pwd"),
+            api_key=aa_config.get("api_key"),
         )
-
         devices_task = aa_client.obtener_devices()
         users_task = aa_client.obtener_usuarios_detallados()
         robots_task = aa_client.obtener_robots()
-
         devices_list, users_list, robots_list = await asyncio.gather(devices_task, users_task, robots_task)
-        print(
-            f"Paso 2: Datos recibidos de A360. Robots: {len(robots_list)}, Dispositivos: {len(devices_list)}, Usuarios: {len(users_list)}"
+        logger.info(
+            f"Datos recibidos de A360: {len(robots_list)} robots, {len(devices_list)} dispositivos, {len(users_list)} users."
         )
 
-        # --- BLOQUE 2: Procesamiento de datos ---
-        print("Paso 3: Procesando y cruzando datos...")
-        users_by_id = {
-            user["UserId"]: user
-            for user in users_list
-            if isinstance(user, dict) and isinstance(user.get("UserId"), (int, str))
-        }
+        users_by_id = {user["id"]: user for user in users_list if isinstance(user, dict) and "id" in user}
 
         equipos_procesados = []
         for device in devices_list:
-            user_id = device.get("UserId")
+            user_id = device.get("userId")
             if user_id in users_by_id:
-                device["Licencia"] = users_by_id[user_id].get("Licencia")
+                # El campo correcto de la licencia parece ser 'licenseFeatures'
+                device["Licencia"] = ", ".join(users_by_id[user_id].get("licenseFeatures", []))
             equipos_procesados.append(device)
 
         # La API de A360 puede devolver duplicados. Los eliminamos antes de enviar a la BD.
         equipos_unicos = {}
         for equipo in equipos_procesados:
-            equipo_id = equipo.get("EquipoId")
+            equipo_id = equipo.get("id")
             if equipo_id:
                 if equipo_id in equipos_unicos:
-                    logger.warning(
-                        f"Se encontró un EquipoId duplicado de la API de A360 y se ha eliminado: ID = {equipo_id}"
-                    )
-                equipos_unicos[equipo_id] = equipo
+                    logger.warning(f"Se encontró un EquipoId duplicado de A360 y se ha omitido: ID = {equipo_id}")
+                else:
+                    equipos_unicos[equipo_id] = equipo
 
         equipos_finales = list(equipos_unicos.values())
 
-        # --- BLOQUE 3: Actualización de la Base de Datos ---
-        print(
-            f"Paso 4: Actualizando la base de datos con {len(robots_list)} robots y {len(equipos_finales)} equipos..."
-        )
         db.merge_equipos(equipos_finales)
         db.merge_robots(robots_list)
+        logger.info("Sincronización con base de datos completada.")
 
-        print("Paso 5: Sincronización completada exitosamente.")
-
-        return {
-            "robots_sincronizados": len(robots_list),
-            "equipos_sincronizados": len(equipos_finales),
-        }
-
+        return {"robots_sincronizados": len(robots_list), "equipos_sincronizados": len(equipos_finales)}
     except Exception as e:
-        # --- CAPTURA DE ERROR DETALLADA ---
-        print(f"ERROR FATAL DURANTE LA SINCRONIZACIÓN: {type(e).__name__} - {e}")
-        import traceback
-
-        traceback.print_exc()
-        # Relanzamos la excepción para que FastAPI devuelva el 500, pero ya habremos visto el detalle.
-        raise e
+        logger.critical(f"Error fatal durante la sincronización: {type(e).__name__} - {e}", exc_info=True)
+        raise
