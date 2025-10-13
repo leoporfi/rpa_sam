@@ -1,77 +1,54 @@
-"""Pytest configuration and fixtures"""
-
-import os
-import sys
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Añadir src/ al path para que los imports funcionen
-src_path = Path(__file__).parent.parent / "src"
-if str(src_path) not in sys.path:
-    sys.path.insert(0, str(src_path))
-
-# --- Inicialización Global para Tests ---
-# Esto se ejecuta una sola vez cuando pytest carga este archivo.
+# Esta importación es necesaria para que la fixture de configuración funcione.
 from sam.common.config_loader import ConfigLoader
 
-if not ConfigLoader.is_initialized():
-    # Seteamos variables de entorno FALSAS que ConfigManager leerá.
-    # Esto evita que los tests dependan de un archivo .env.
-    os.environ["SQL_SAM_HOST"] = "test_server"
-    os.environ["SQL_SAM_DB_NAME"] = "SAM_TEST"
-    os.environ["SQL_SAM_UID"] = "test_user"
-    os.environ["SQL_SAM_PWD"] = "test_pass"
-    os.environ["CALLBACK_TOKEN"] = "test_token_123"
-    # Añadimos las variables para el segundo conector de BD del balanceador
-    os.environ["SQL_RPA360_HOST"] = "test_server_rpa"
-    os.environ["SQL_RPA360_DB_NAME"] = "RPA360_TEST"
-    os.environ["SQL_RPA360_UID"] = "test_user_rpa"
-    os.environ["SQL_RPA360_PWD"] = "test_pass_rpa"
 
-    # Inicializamos el cargador en un modo de "test"
-    ConfigLoader.initialize_service("test")
+@pytest.fixture(scope="session", autouse=True)
+def setup_and_mock_config(pytestconfig):
+    """
+    Se ejecuta una sola vez por sesión para asegurar que la configuración
+    esté 'mockeada' antes de que cualquier prueba se ejecute.
+    Esto previene que los tests intenten leer archivos .env.
+    """
+    # Inicializa el cargador para asegurar que sys.path sea correcto.
+    ConfigLoader.initialize_service("sam_test_session")
 
+    # Usamos patch para interceptar las llamadas al ConfigManager.
+    # Esto reemplaza la necesidad de un archivo .env durante las pruebas.
+    mock_settings = {
+        "CALLBACK_AUTH_TOKEN": "test-token",
+        "A360_CONTROL_ROOM_URL": "https://test.a360.com",
+        "A360_API_KEY": "test-key",
+        "A360_USER": "test-user",
+        "SQL_SAM_SERVER": "test-server",
+        "SQL_SAM_DATABASE": "test-db",
+        "SQL_SAM_USER": "test-user",
+        "SQL_SAM_PASSWORD": "test-password",
+    }
 
-# --- Fixtures Reutilizables ---
+    # Creamos un 'side effect' para simular la obtención de valores.
+    def mock_get(key, default=None):
+        return mock_settings.get(key, default)
+
+    # Aplicamos el patch a los métodos de ConfigManager
+    patch("sam.common.config_manager.ConfigManager.get_str", side_effect=mock_get).start()
+    patch("sam.common.config_manager.ConfigManager.get_int", return_value=30).start()
+    patch("sam.common.config_manager.ConfigManager.get_bool", return_value=True).start()
 
 
 @pytest.fixture
-def mock_db_connector(mocker):
+def mock_db_connector():
     """
-    Mock de DatabaseConnector. Se usa en la mayoría de los tests
-    para simular la interacción con la base de datos.
+    Crea un mock autocontenido del DatabaseConnector para inyectar en los tests.
     """
-    # Usamos `spec=True` para que el mock tenga la misma interfaz que la clase real.
-    # Si intentas llamar a un método que no existe en DatabaseConnector, el test fallará.
-    mock = mocker.MagicMock(spec=True, instance=True, name="DatabaseConnector()")
-    # Configuramos un comportamiento por defecto
-    mock.ejecutar_consulta.return_value = []
-    # `spec` no mockea métodos mágicos, así que lo hacemos manualmente si es necesario
-    mock.__enter__.return_value = mock
-    mock.__exit__.return_value = None
-    return mock
-
-
-@pytest.fixture
-def mock_aa_client(mocker):
-    """
-    Mock de AutomationAnywhereClient, preparado para métodos asíncronos.
-    """
-    # Usamos `AsyncMock` para métodos `async def`.
-    mock = mocker.MagicMock(spec=True, instance=True, name="AutomationAnywhereClient()")
-    mock.obtener_robots = AsyncMock(return_value=[])
-    mock.obtener_devices = AsyncMock(return_value=[])
-    mock.obtener_usuarios_detallados = AsyncMock(return_value=[])
-    mock.desplegar_bot_v4 = AsyncMock(return_value={"deploymentId": "test-deploy-id"})
-    mock.obtener_detalles_por_deployment_ids = AsyncMock(return_value=[])
-    return mock
-
-
-@pytest.fixture
-def mock_apigw_client(mocker):
-    """Mock de ApiGatewayClient, preparado para métodos asíncronos."""
-    mock = mocker.MagicMock(spec=True, instance=True, name="ApiGatewayClient()")
-    mock.get_auth_header = AsyncMock(return_value={"Authorization": "Bearer test-gateway-token"})
-    return mock
+    connector = MagicMock()
+    # Usamos AsyncMock para los métodos que son `async`
+    connector.connect = MagicMock()
+    connector.close = MagicMock()
+    connector.fetch_all = MagicMock(return_value=[])
+    connector.fetch_one = MagicMock(return_value=None)
+    connector.execute = MagicMock(return_value=None)
+    return connector
