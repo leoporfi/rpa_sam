@@ -153,6 +153,21 @@ class AutomationAnywhereClient:
     async def obtener_devices(self) -> List[Dict]:
         logger.info("Obteniendo devices de A360...")
         payload = {"filter": {"operator": "eq", "field": "status", "value": "CONNECTED"}}
+        # RFR-27: Se elimina el mapeo. El cliente devuelve los datos en bruto de la API.
+        devices_api = await self._obtener_lista_paginada_entidades(self._ENDPOINT_DEVICES_LIST_V2, payload)
+        logger.info(f"Se encontraron {len(devices_api)} devices conectados.")
+        return devices_api
+
+    async def obtener_usuarios_detallados(self) -> List[Dict]:
+        logger.info("Obteniendo usuarios detallados de A360...")
+        # RFR-27: Se elimina el mapeo. El cliente devuelve los datos en bruto de la API.
+        usuarios_api = await self._obtener_lista_paginada_entidades(self._ENDPOINT_USERS_LIST_V2, {})
+        logger.info(f"Se encontraron {len(usuarios_api)} usuarios.")
+        return usuarios_api
+
+    async def obtener_devices_old(self) -> List[Dict]:
+        logger.info("Obteniendo devices de A360...")
+        payload = {"filter": {"operator": "eq", "field": "status", "value": "CONNECTED"}}
         devices_api = await self._obtener_lista_paginada_entidades(self._ENDPOINT_DEVICES_LIST_V2, payload)
 
         devices_mapeados = []
@@ -169,7 +184,7 @@ class AutomationAnywhereClient:
         logger.info(f"Se encontraron {len(devices_mapeados)} devices conectados.")
         return devices_mapeados
 
-    async def obtener_usuarios_detallados(self) -> List[Dict]:
+    async def obtener_usuarios_detallados_old(self) -> List[Dict]:
         logger.info("Obteniendo usuarios detallados de A360...")
         usuarios_api = await self._obtener_lista_paginada_entidades(self._ENDPOINT_USERS_LIST_V2, {})
 

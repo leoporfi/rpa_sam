@@ -72,3 +72,4 @@ def main():
         if db_rpa360:
             db_rpa360.cerrar_conexion_hilo_actual()
         logging.info(f"El servicio {SERVICE_NAME} ha concluido su ejecución.")
+
