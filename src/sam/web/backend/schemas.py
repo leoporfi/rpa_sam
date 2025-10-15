@@ -64,12 +64,6 @@ class RobotFilters(TypedDict, total=False):
     size: Optional[int]
 
 
-# (Opcional por ahora) Podemos añadir más tipos a medida que los necesitemos
-class RobotUpdateData(TypedDict):
-    # ... por definir
-    pass
-
-
 class PoolCreate(BaseModel):
     Nombre: str
     Descripcion: Optional[str] = None
@@ -82,4 +76,5 @@ class PoolUpdate(BaseModel):
 
 class PoolAssignmentsRequest(BaseModel):
     robot_ids: List[int]
-    team_ids: List[int]
+    # RFR-34: Se estandariza el nombre del campo para que sea consistente.
+    equipo_ids: List[int]

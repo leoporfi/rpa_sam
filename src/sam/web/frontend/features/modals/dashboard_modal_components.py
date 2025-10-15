@@ -39,7 +39,6 @@ DEFAULT_FORM_STATE = {
 
 @component
 def RobotEditModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_success: Callable):
-    # (Este componente no tiene cambios en esta actualización)
     form_data, set_form_data = use_state(DEFAULT_ROBOT_STATE)
     is_loading, set_is_loading = use_state(False)
     notification_ctx = use_context(NotificationContext)
@@ -99,7 +98,6 @@ def RobotEditModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_suc
             ),
             html.form(
                 {"id": "robot-form", "onSubmit": event(handle_save, prevent_default=True)},
-                # Form fields remain the same
                 html.div(
                     {"className": "grid"},
                     html.label(
@@ -261,7 +259,6 @@ def DeviceList(
 ):
     """
     Componente reutilizable que renderiza una lista de equipos con búsqueda y selección.
-    Ahora tiene una altura fija para evitar que el modal cambie de tamaño.
     """
 
     def handle_select_all(event):
@@ -271,12 +268,14 @@ def DeviceList(
             on_selection_change([])
 
     def handle_select_one(device_id, is_checked):
-        current_ids = set(selected_ids)
+        current_ids = list(selected_ids)
         if is_checked:
-            current_ids.add(device_id)
+            if device_id not in current_ids:
+                current_ids.append(device_id)
         else:
-            current_ids.discard(device_id)
-        on_selection_change(list(current_ids))
+            if device_id in current_ids:
+                current_ids.remove(device_id)
+        on_selection_change(current_ids)
 
     def get_estado(device: Dict) -> tuple[str, str]:
         if device.get("EsProgramado"):
@@ -285,7 +284,6 @@ def DeviceList(
             return ("Reservado", "tag-reservado")
         return ("Dinámico", "tag-dinamico")
 
-    # <<-- CAMBIO: La columna de estado se muestra si el primer elemento tiene la key -->>
     has_status_column = devices and "EsProgramado" in devices[0]
 
     return html.div(
@@ -299,7 +297,6 @@ def DeviceList(
                 "style": {"marginBottom": "0.5rem"},
             }
         ),
-        # <<-- CAMBIO: Se usa 'height' en lugar de 'maxHeight' para un tamaño fijo -->>
         html.div(
             {"style": {"height": "35vh", "overflowY": "auto", "fontSize": "0.90rem"}},
             html.table(
@@ -333,7 +330,12 @@ def DeviceList(
                         for device in devices
                     ]
                     if devices
-                    else html.tr(html.td({"colSpan": 3 if has_status_column else 2}, "No hay equipos para mostrar."))
+                    else html.tr(
+                        html.td(
+                            {"colSpan": 3 if has_status_column else 2, "style": {"textAlign": "center"}},
+                            "No hay equipos para mostrar.",
+                        )
+                    )
                 ),
             ),
         ),
@@ -342,12 +344,10 @@ def DeviceList(
 
 @component
 def AssignmentsModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_success: Callable):
-    # --- ESTADOS ---
     assigned_devices, set_assigned_devices = use_state([])
     available_devices, set_available_devices = use_state([])
     is_loading, set_is_loading = use_state(False)
 
-    # <<-- CAMBIO: Renombrado para mayor claridad (equipos seleccionados para mover) -->>
     selected_in_available, set_selected_in_available = use_state([])
     selected_in_assigned, set_selected_in_assigned = use_state([])
 
@@ -358,7 +358,6 @@ def AssignmentsModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_s
     search_assigned, set_search_assigned = use_state("")
     search_available, set_search_available = use_state("")
 
-    # --- CARGA DE DATOS ---
     @use_effect(dependencies=[robot])
     def fetch_data():
         async def get_data():
@@ -383,7 +382,6 @@ def AssignmentsModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_s
 
         asyncio.create_task(get_data())
 
-    # --- LÓGICA DE FILTRADO ---
     filtered_assigned = use_memo(
         lambda: [device for device in assigned_devices if search_assigned.lower() in device.get("Equipo", "").lower()],
         [assigned_devices, search_assigned],
@@ -395,7 +393,6 @@ def AssignmentsModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_s
         [available_devices, search_available],
     )
 
-    # --- MANEJADORES DE MOVIMIENTO Y GUARDADO ---
     def move_items(source_list, set_source, dest_list, set_dest, selected_ids, clear_selection):
         items_to_move = {item["EquipoId"]: item for item in source_list if item["EquipoId"] in selected_ids}
         set_dest(sorted(dest_list + list(items_to_move.values()), key=lambda x: x["Equipo"]))
@@ -405,16 +402,20 @@ def AssignmentsModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_s
     async def handle_save(event_data):
         set_is_loading(True)
         try:
-            # IDs originales vs actuales
-            original_assigned_ids = {t["EquipoId"] for t in (await api_service.get_robot_assignments(robot["RobotId"]))}
-            current_assigned_ids = {t["EquipoId"] for t in assigned_devices}
+            original_assigned_ids_set = {
+                t["EquipoId"] for t in (await api_service.get_robot_assignments(robot["RobotId"]))
+            }
+            current_assigned_ids_set = {t["EquipoId"] for t in assigned_devices}
 
-            ids_to_assign = list(current_assigned_ids - original_assigned_ids)
-            ids_to_unassign = list(original_assigned_ids - current_assigned_ids)
+            ids_to_assign = list(current_assigned_ids_set - original_assigned_ids_set)
+            ids_to_unassign = list(original_assigned_ids_set - current_assigned_ids_set)
 
-            await api_service.update_robot_assignments(robot["RobotId"], ids_to_assign, ids_to_unassign)
-            await on_save_success()
-            show_notification("Se actualizó la asignación correctamente", "success")
+            if ids_to_assign or ids_to_unassign:
+                await api_service.update_robot_assignments(robot["RobotId"], ids_to_assign, ids_to_unassign)
+                await on_save_success()
+                show_notification("Se actualizó la asignación correctamente", "success")
+            else:
+                on_close()
         except Exception as e:
             show_notification(f"Error al guardar: {e}", "error")
         finally:
@@ -423,7 +424,6 @@ def AssignmentsModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_s
     if not robot:
         return None
 
-    # --- RENDERIZADO ---
     return html.dialog(
         {"open": True, "style": {"width": "90vw", "maxWidth": "1000px"}},
         html.article(
@@ -432,7 +432,6 @@ def AssignmentsModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_s
                 html.h2("Asignación de Equipos"),
                 html.p(f"Robot: {robot.get('Robot', '')}"),
             ),
-            # <<-- CAMBIO: Layout de 3 columnas: Disponible | Botones | Asignado -->>
             html.div(
                 {
                     "className": "grid",
@@ -496,9 +495,6 @@ def AssignmentsModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_s
             ),
         ),
     )
-
-
-# --- El resto de los componentes (SchedulesModal, etc.) no tienen cambios y se mantienen igual ---
 
 
 @component
@@ -603,7 +599,6 @@ def SchedulesModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_suc
                 SchedulesList(
                     api_service=api_service,
                     schedules=schedules,
-                    robot_id=robot["RobotId"],
                     on_edit=handle_edit_click,
                     on_delete_success=handle_successful_change,
                 )
@@ -625,9 +620,7 @@ def SchedulesModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_suc
 
 
 @component
-def SchedulesList(
-    api_service: ApiClient, schedules: List[Dict], robot_id: int, on_edit: Callable, on_delete_success: Callable
-):
+def SchedulesList(api_service: ApiClient, schedules: List[Dict], on_edit: Callable, on_delete_success: Callable):
     def format_schedule_details(schedule):
         details = f"{schedule.get('TipoProgramacion', 'N/A')} a las {schedule.get('HoraInicio', '')}"
         tipo = schedule.get("TipoProgramacion")
@@ -652,7 +645,6 @@ def SchedulesList(
                         DeleteButton(
                             api_service=api_service,
                             schedule_id=s["ProgramacionId"],
-                            robot_id=robot_id,
                             on_delete_success=on_delete_success,
                         ),
                     )
@@ -660,16 +652,20 @@ def SchedulesList(
             )
             for s in schedules
         ],
-        [schedules, robot_id, on_edit, on_delete_success],
+        [schedules, on_edit, on_delete_success],
     )
     return html.table(
         html.thead(html.tr(html.th("Detalles"), html.th("Equipos"), html.th("Acciones"))),
-        html.tbody(rows if rows else html.tr(html.td({"colSpan": 3}, "No hay programaciones."))),
+        html.tbody(
+            rows
+            if rows
+            else html.tr(html.td({"colSpan": 3, "style": {"textAlign": "center"}}, "No hay programaciones."))
+        ),
     )
 
 
 @component
-def DeleteButton(api_service: ApiClient, schedule_id: int, robot_id: int, on_delete_success: Callable):
+def DeleteButton(api_service: ApiClient, schedule_id: int, on_delete_success: Callable):
     notification_ctx = use_context(NotificationContext)
     show_notification = notification_ctx["show_notification"]
     is_deleting, set_is_deleting = use_state(False)
@@ -679,8 +675,6 @@ def DeleteButton(api_service: ApiClient, schedule_id: int, robot_id: int, on_del
             return
         set_is_deleting(True)
         try:
-            # RFR-08: Corregida la llamada para que coincida con la nueva firma
-            # del 'api_client', que solo requiere 'schedule_id'.
             await api_service.delete_schedule(schedule_id)
             show_notification("Programación eliminada.", "success")
             await on_delete_success()
@@ -689,7 +683,7 @@ def DeleteButton(api_service: ApiClient, schedule_id: int, robot_id: int, on_del
         finally:
             set_is_deleting(False)
 
-    handle_click = use_callback(delete_schedule, [schedule_id, robot_id, is_deleting])
+    handle_click = use_callback(delete_schedule, [schedule_id, is_deleting])
     return html.button(
         {"className": "secondary outline", "onClick": handle_click, "disabled": is_deleting, "aria-busy": is_deleting},
         "Eliminar",
@@ -826,20 +820,25 @@ def ConditionalFields(tipo: str, form_data: Dict, on_change: Callable):
 @component
 def DeviceSelector(available_devices: List[Dict], selected_devices: List[int], on_change: Callable):
     safe_selected_devices = selected_devices or []
-    selected_devices_set = use_memo(lambda: set(safe_selected_devices), [safe_selected_devices])
-    all_available_ids_set = use_memo(lambda: {device["EquipoId"] for device in available_devices}, [available_devices])
-    are_all_devices_selected = all_available_ids_set and all_available_ids_set.issubset(selected_devices_set)
+    # RFR-21: Se eliminan todas las instancias de 'set' para asegurar la serialización JSON.
+    # La lógica ahora opera exclusivamente con listas.
+    all_available_ids = use_memo(lambda: [device["EquipoId"] for device in available_devices], [available_devices])
+    are_all_devices_selected = len(safe_selected_devices) > 0 and all(
+        item in safe_selected_devices for item in all_available_ids
+    )
 
     def handle_select_all_devices(event):
-        on_change(list(all_available_ids_set) if event["target"]["checked"] else [])
+        on_change(all_available_ids if event["target"]["checked"] else [])
 
     def handle_device_select(device_id, checked):
-        current_devices = set(safe_selected_devices)
+        current_devices = list(safe_selected_devices)
         if checked:
-            current_devices.add(device_id)
+            if device_id not in current_devices:
+                current_devices.append(device_id)
         else:
-            current_devices.discard(device_id)
-        on_change(list(current_devices))
+            if device_id in current_devices:
+                current_devices.remove(device_id)
+        on_change(current_devices)
 
     return html.fieldset(
         html.label(
@@ -856,7 +855,7 @@ def DeviceSelector(available_devices: List[Dict], selected_devices: List[int], o
                     html.input(
                         {
                             "type": "checkbox",
-                            "checked": device["EquipoId"] in selected_devices_set,
+                            "checked": device["EquipoId"] in safe_selected_devices,
                             "onChange": lambda e, tid=device["EquipoId"]: handle_device_select(
                                 tid, e["target"]["checked"]
                             ),

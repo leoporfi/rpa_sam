@@ -4,38 +4,121 @@ from reactpy import component, event, html
 
 
 @component
-def Pagination(current_page: int, total_pages: int, on_page_change: Callable):
+def Pagination(
+    current_page: int,
+    total_pages: int,
+    total_items: int,
+    items_per_page: int,
+    on_page_change: Callable,
+    max_visible_pages: int = 5,
+):
     """
-    Componente de paginación refactorizado para Pico.css usando un grid.
+    Componente de paginación avanzado, inspirado en templates modernos.
+    Muestra botones de primero/último, anterior/siguiente y un rango de páginas.
     """
+
+    # RFR-15: Se simplifica la función. El event.prevent_default() ahora
+    # es manejado por el decorador event() en la llamada.
+    def handle_page_click(page_number):
+        if 1 <= page_number <= total_pages:
+            on_page_change(page_number)
+
+    def render_page_numbers():
+        if total_pages <= max_visible_pages:
+            start_page, end_page = 1, total_pages
+        else:
+            offset = max_visible_pages // 2
+            start_page = max(1, current_page - offset)
+            end_page = min(total_pages, start_page + max_visible_pages - 1)
+            if end_page - start_page < max_visible_pages - 1:
+                start_page = max(1, end_page - max_visible_pages + 1)
+
+        pages = []
+        for i in range(start_page, end_page + 1):
+            is_current = i == current_page
+            pages.append(
+                html.li(
+                    html.a(
+                        {
+                            "href": "#",
+                            "role": "button" if not is_current else None,
+                            "className": "" if is_current else "secondary",
+                            "aria-current": "page" if is_current else None,
+                            # RFR-15: Se envuelve la lambda en el decorador event()
+                            # para manejar correctamente la prevención del evento por defecto.
+                            "onClick": event((lambda p: lambda e: handle_page_click(p))(i), prevent_default=True),
+                        },
+                        str(i),
+                    )
+                )
+            )
+        return pages
+
+    start_item = (current_page - 1) * items_per_page + 1
+    end_item = min(current_page * items_per_page, total_items)
     is_first_page = current_page == 1
     is_last_page = current_page == total_pages
 
-    def handle_previous(e):
-        if not is_first_page:
-            on_page_change(current_page - 1)
-
-    def handle_next(e):
-        if not is_last_page:
-            on_page_change(current_page + 1)
-
     return html.nav(
-        {"className": "grid"},
+        {"aria-label": "Pagination", "className": "pagination-container"},
         html.div(
-            html.button(
-                {"className": "secondary", "onClick": handle_previous, "disabled": is_first_page},
-                "Anterior",
-            )
+            {"className": "pagination-summary"},
+            f"Mostrando {start_item}-{end_item} de {total_items} robots",
         ),
-        html.div(
-            {"style": {"textAlign": "center", "lineHeight": "2.5rem"}},
-            f"Página {current_page} de {total_pages}",
-        ),
-        html.div(
-            {"style": {"textAlign": "right"}},
-            html.button(
-                {"className": "secondary", "onClick": handle_next, "disabled": is_last_page},
-                "Siguiente",
+        html.ul(
+            {"className": "pagination-controls"},
+            html.li(
+                html.a(
+                    {
+                        "href": "#",
+                        "className": "secondary",
+                        "onClick": event(lambda e: handle_page_click(1), prevent_default=True),
+                        "aria-label": "Primera página",
+                        "data-tooltip": "Primera página",
+                        "disabled": is_first_page,
+                    },
+                    "«",
+                )
+            ),
+            html.li(
+                html.a(
+                    {
+                        "href": "#",
+                        "className": "secondary",
+                        "onClick": event(lambda e: handle_page_click(current_page - 1), prevent_default=True),
+                        "aria-label": "Página anterior",
+                        "data-tooltip": "Página anterior",
+                        "disabled": is_first_page,
+                    },
+                    "‹",
+                )
+            ),
+            *render_page_numbers(),
+            html.li(
+                html.a(
+                    {
+                        "href": "#",
+                        "className": "secondary",
+                        "onClick": event(lambda e: handle_page_click(current_page + 1), prevent_default=True),
+                        "aria-label": "Página siguiente",
+                        "data-tooltip": "Página siguiente",
+                        "disabled": is_last_page,
+                    },
+                    "›",
+                )
+            ),
+            html.li(
+                html.a(
+                    {
+                        "href": "#",
+                        "className": "secondary",
+                        "onClick": event(lambda e: handle_page_click(total_pages), prevent_default=True),
+                        "aria-label": "Última página",
+                        "data-tooltip": "Última página",
+                        "disabled": is_last_page,
+                    },
+                    "»",
+                )
             ),
         ),
     )
@@ -68,7 +151,12 @@ def ActionMenu(actions: List[Dict[str, any]]):
         html.ul(
             {"role": "listbox"},
             *[
-                html.li(html.a({"href": "#", "onClick": event(action["on_click"], prevent_default=True)}, html.small(action["label"])))
+                html.li(
+                    html.a(
+                        {"href": "#", "onClick": event(action["on_click"], prevent_default=True)},
+                        html.small(action["label"]),
+                    )
+                )
                 for action in actions
             ],
         ),
@@ -124,7 +212,10 @@ def ConfirmationModal(is_open: bool, title: str, message: str, on_confirm: Calla
                     html.button(
                         {
                             "onClick": handle_confirm_click,
-                            "style": {"backgroundColor": "var(--pico-color-pink-550)", "borderColor": "var(--pico-color-pink-550)"},
+                            "style": {
+                                "backgroundColor": "var(--pico-color-pink-550)",
+                                "borderColor": "var(--pico-color-pink-550)",
+                            },
                         },
                         "Confirmar",
                     ),

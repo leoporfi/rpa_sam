@@ -104,11 +104,25 @@ def RobotDashboard(robots: List[Robot], on_action: Callable, robots_state: Dict,
     error = robots_state["error"]
     current_page = robots_state["current_page"]
     total_pages = robots_state["total_pages"]
+    total_count = robots_state["total_count"]
+    page_size = robots_state["page_size"]
 
     if error:
         return html.article({"aria_invalid": "true"}, f"Error al cargar datos: {error}")
     if loading and not robots:
         return LoadingSpinner()
+
+    pagination_component = (
+        Pagination(
+            current_page=current_page,
+            total_pages=total_pages,
+            total_items=total_count,
+            items_per_page=page_size,
+            on_page_change=set_current_page,
+        )
+        if total_pages > 1
+        else None
+    )
 
     return html._(
         html.div(
@@ -125,9 +139,7 @@ def RobotDashboard(robots: List[Robot], on_action: Callable, robots_state: Dict,
                 on_sort=robots_state["handle_sort"],
             ),
         ),
-        Pagination(current_page=current_page, total_pages=total_pages, on_page_change=set_current_page)
-        if total_pages > 1
-        else None,
+        pagination_component,
     )
 
 
@@ -168,8 +180,9 @@ def RobotTable(robots: List[Robot], on_action: Callable, sort_by: str, sort_dir:
                 *[RobotRow(robot=robot, on_action=on_action) for robot in robots]
                 if robots
                 else html.tr(
+                    # RFR-17: Mensaje descriptivo cuando no hay datos.
                     html.td(
-                        {"col_span": len(table_headers), "style": {"text_align": "center", "padding": "2rem"}},
+                        {"colSpan": len(table_headers), "style": {"textAlign": "center"}},
                         "No se encontraron robots.",
                     )
                 )
@@ -180,9 +193,6 @@ def RobotTable(robots: List[Robot], on_action: Callable, sort_by: str, sort_dir:
 
 @component
 def RobotRow(robot: Robot, on_action: Callable):
-    # RFR-07: Se definen funciones 'async' locales para cada evento.
-    # Esta es la forma correcta y robusta de manejar corutinas en los
-    # manejadores de eventos, solucionando tanto el SyntaxError como el RuntimeWarning.
     async def handle_toggle_active(event):
         await on_action("toggle_active", robot)
 
@@ -271,7 +281,6 @@ def RobotRow(robot: Robot, on_action: Callable):
 
 @component
 def RobotCard(robot: Robot, on_action: Callable):
-    # RFR-07: Se aplica la misma corrección que en RobotRow.
     async def handle_toggle_active(event):
         await on_action("toggle_active", robot)
 

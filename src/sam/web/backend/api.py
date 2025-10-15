@@ -1,6 +1,6 @@
-# sam/web/backend/api.py
+# sam/web/api.py
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
@@ -11,7 +11,6 @@ from . import database as db_service
 from .dependencies import get_db
 
 # Importa los schemas desde el archivo local de schemas
-# Agrega estas importaciones al inicio de web/backend/api.py
 from .schemas import (
     AssignmentUpdateRequest,
     PoolAssignmentsRequest,
@@ -24,7 +23,6 @@ from .schemas import (
 
 logger = logging.getLogger(__name__)
 
-# --- Define un ÚNICO router para toda la API ---
 router = APIRouter()
 
 
@@ -37,7 +35,6 @@ async def trigger_sync(db: DatabaseConnector = Depends(get_db)):
         summary = await db_service.sync_with_a360(db)
         return summary
     except Exception as e:
-        # En caso de error, devuelve un detalle claro al frontend
         raise HTTPException(status_code=500, detail=f"Error durante la sincronización: {str(e)}")
 
 
@@ -94,47 +91,41 @@ def create_robot(robot_data: RobotCreateRequest, db: DatabaseConnector = Depends
         if not new_robot:
             raise HTTPException(status_code=500, detail="No se pudo crear el robot.")
         return new_robot
-    except ValueError as e:  # Captura el error específico del servicio
+    except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error inesperado al crear el robot: {e}")
 
 
-# --- Rutas para Programaciones (Schedules) ---
-@router.get("/api/schedules", tags=["Schedules"])
+# --- Rutas para Programaciones ---
+@router.get("/api/schedules", tags=["Programaciones"])
 def get_all_schedules(db: DatabaseConnector = Depends(get_db)):
-    """Obtiene todas las programaciones."""
     try:
         return db_service.get_all_schedules(db)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al obtener programaciones: {e}")
 
 
-@router.get("/api/schedules/robot/{robot_id}", tags=["Schedules"])
+@router.get("/api/schedules/robot/{robot_id}", tags=["Programaciones"])
 def get_robot_schedules(robot_id: int, db: DatabaseConnector = Depends(get_db)):
-    """Obtiene las programaciones para un robot específico."""
     try:
-        return db_service.get_schedules_for_robot(db, robot_id)
+        return db_service.get_robot_schedules(db, robot_id)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al obtener programaciones: {e}")
+        raise HTTPException(status_code=500, detail=f"Error al obtener programaciones: {str(e)}")
 
 
-@router.delete("/api/schedules/{schedule_id}", tags=["Schedules"], status_code=204)
-def delete_schedule(schedule_id: int, db: DatabaseConnector = Depends(get_db)):
-    """Elimina una programación por su ID."""
+@router.delete("/api/schedules/{programacion_id}/robot/{robot_id}", tags=["Programaciones"], status_code=204)
+def delete_schedule(programacion_id: int, robot_id: int, db: DatabaseConnector = Depends(get_db)):
     try:
-        db_service.delete_schedule_full(db, schedule_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        db_service.delete_schedule(db, programacion_id, robot_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al eliminar la programación: {e}")
 
 
-@router.post("/api/schedules", tags=["Schedules"], status_code=201)
+@router.post("/api/schedules", tags=["Programaciones"])
 def create_schedule(data: ScheduleData, db: DatabaseConnector = Depends(get_db)):
-    """Crea una nueva programación."""
     try:
-        db_service.create_new_schedule(db, data)
+        db_service.create_schedule(db, data)
         return {"message": "Programación creada con éxito."}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -142,11 +133,10 @@ def create_schedule(data: ScheduleData, db: DatabaseConnector = Depends(get_db))
         raise HTTPException(status_code=500, detail=f"Error al crear la programación: {e}")
 
 
-@router.put("/api/schedules/{schedule_id}", tags=["Schedules"])
+@router.put("/api/schedules/{schedule_id}", tags=["Programaciones"])
 def update_schedule(schedule_id: int, data: ScheduleData, db: DatabaseConnector = Depends(get_db)):
-    """Actualiza una programación existente."""
     try:
-        db_service.update_existing_schedule(db, schedule_id, data)
+        db_service.update_schedule(db, schedule_id, data)
         return {"message": "Programación actualizada con éxito"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -157,9 +147,6 @@ def update_schedule(schedule_id: int, data: ScheduleData, db: DatabaseConnector 
 # --- Rutas para Equipos ---
 @router.get("/api/equipos/disponibles/{robot_id}", tags=["Equipos"])
 def get_available_devices(robot_id: int, db: DatabaseConnector = Depends(get_db)):
-    """
-    Obtiene la lista de equipos disponibles para ser asignados a un robot.
-    """
     try:
         return db_service.get_available_teams_for_robot(db, robot_id)
     except Exception as e:
@@ -180,11 +167,12 @@ def update_robot_assignments(
     robot_id: int, update_data: AssignmentUpdateRequest, db: DatabaseConnector = Depends(get_db)
 ):
     try:
+        # RFR-34: Se usan los nombres de campo correctos del modelo Pydantic.
         result = db_service.update_asignaciones_robot(
-            db, robot_id, update_data.assign_device_ids, update_data.unassign_device_ids
+            db, robot_id, update_data.asignar_equipo_ids, update_data.desasignar_equipo_ids
         )
         return result
-    except ValueError as e:  # Para errores controlados como "Robot no encontrado"
+    except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al actualizar asignaciones: {e}")
@@ -193,11 +181,8 @@ def update_robot_assignments(
 # --- Rutas para Pools ---
 @router.get("/api/pools", tags=["Pools"])
 def get_all_pools(db: DatabaseConnector = Depends(get_db)):
-    """
-    Obtiene la lista completa de pools de recursos.
-    """
+    logger.info("Solicitud para obtener todos los pools recibida.")
     try:
-        logger.info("Solicitud para obtener todos los pools recibida.")
         pools = db_service.get_pools(db)
         logger.info(f"Se encontraron y devolvieron {len(pools)} pools.")
         return pools
@@ -208,9 +193,6 @@ def get_all_pools(db: DatabaseConnector = Depends(get_db)):
 
 @router.post("/api/pools", tags=["Pools"], status_code=201)
 def create_new_pool(pool_data: PoolCreate, db: DatabaseConnector = Depends(get_db)):
-    """
-    Crea un nuevo pool de recursos.
-    """
     try:
         return db_service.create_pool(db, pool_data.Nombre, pool_data.Descripcion)
     except Exception as e:
@@ -220,9 +202,6 @@ def create_new_pool(pool_data: PoolCreate, db: DatabaseConnector = Depends(get_d
 
 @router.put("/api/pools/{pool_id}", tags=["Pools"])
 def update_existing_pool(pool_id: int, pool_data: PoolUpdate, db: DatabaseConnector = Depends(get_db)):
-    """
-    Actualiza un pool de recursos existente.
-    """
     try:
         db_service.update_pool(db, pool_id, pool_data.Nombre, pool_data.Descripcion)
         return {"message": f"Pool {pool_id} actualizado con éxito."}
@@ -233,14 +212,12 @@ def update_existing_pool(pool_id: int, pool_data: PoolUpdate, db: DatabaseConnec
         elif "ya está en uso" in error_message:
             raise HTTPException(status_code=409, detail=error_message)
         else:
+            logger.error(f"Error al actualizar el pool {pool_id}: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=error_message)
 
 
 @router.delete("/api/pools/{pool_id}", tags=["Pools"], status_code=204)
 def delete_single_pool(pool_id: int, db: DatabaseConnector = Depends(get_db)):
-    """
-    Elimina un pool de recursos específico.
-    """
     try:
         db_service.delete_pool(db, pool_id)
     except Exception as e:
@@ -253,9 +230,6 @@ def delete_single_pool(pool_id: int, db: DatabaseConnector = Depends(get_db)):
 
 @router.get("/api/pools/{pool_id}/asignaciones", tags=["Pools"])
 def get_pool_assignments(pool_id: int, db: DatabaseConnector = Depends(get_db)):
-    """
-    Obtiene los recursos asignados y disponibles para un pool específico.
-    """
     try:
         return db_service.get_pool_assignments_and_available_resources(db, pool_id)
     except Exception as e:
@@ -265,11 +239,9 @@ def get_pool_assignments(pool_id: int, db: DatabaseConnector = Depends(get_db)):
 
 @router.put("/api/pools/{pool_id}/asignaciones", tags=["Pools"])
 def set_pool_assignments(pool_id: int, data: PoolAssignmentsRequest, db: DatabaseConnector = Depends(get_db)):
-    """
-    Establece (sobrescribe) las asignaciones de robots y equipos para un pool.
-    """
     try:
-        db_service.assign_resources_to_pool(db, pool_id, data.robot_ids, data.team_ids)
+        # RFR-34: Se usa el nombre de campo corregido 'equipo_ids'.
+        db_service.assign_resources_to_pool(db, pool_id, data.robot_ids, data.equipo_ids)
         return {"message": f"Asignaciones para el Pool {pool_id} actualizadas correctamente."}
     except Exception as e:
         logger.error(f"Error al actualizar asignaciones para el pool {pool_id}: {e}", exc_info=True)
@@ -277,3 +249,4 @@ def set_pool_assignments(pool_id: int, data: PoolAssignmentsRequest, db: Databas
         if "No se encontró un pool" in error_message:
             raise HTTPException(status_code=404, detail=error_message)
         raise HTTPException(status_code=500, detail=f"Error al actualizar asignaciones: {error_message}")
+

@@ -1,13 +1,9 @@
-# ---------------------------------------------------------------------------
-# ARCHIVO: src/interfaz_web/features/pools/modals.py
-# ---------------------------------------------------------------------------
-# NOTA: Renombré `pool_modal_components.py` a `modals.py` para que la
-# estructura sea `features/pools/modals.py`, que es más limpia.
-# ---------------------------------------------------------------------------
-import asyncio
-from typing import Callable, Dict, List, Set
+# sam/web/features/pools/pool_modals.py
 
-from reactpy import component, event, html, use_context, use_effect, use_state
+import asyncio
+from typing import Callable, Dict, List
+
+from reactpy import component, event, html, use_context, use_effect, use_memo, use_state
 
 from ...api_client import get_api_client
 from ...shared.notifications import NotificationContext
@@ -38,7 +34,9 @@ def PoolEditModal(pool: Dict, on_close: Callable, on_save: Callable):
         set_is_loading(True)
         try:
             await on_save(form_data)
-            notification_ctx["show_notification"](f"Pool {'actualizado' if is_edit_mode else 'creado'} con éxito.", "success")
+            notification_ctx["show_notification"](
+                f"Pool {'actualizado' if is_edit_mode else 'creado'} con éxito.", "success"
+            )
             on_close()
         except Exception as e:
             notification_ctx["show_notification"](str(e), "error")
@@ -79,7 +77,12 @@ def PoolEditModal(pool: Dict, on_close: Callable, on_save: Callable):
                 html.div(
                     {"className": "grid"},
                     html.button(
-                        {"type": "button", "className": "secondary", "onClick": lambda e: on_close(), "disabled": is_loading},
+                        {
+                            "type": "button",
+                            "className": "secondary",
+                            "onClick": lambda e: on_close(),
+                            "disabled": is_loading,
+                        },
                         "Cancelar",
                     ),
                     html.button({"type": "submit", "form": "pool-form", "aria-busy": is_loading}, "Guardar"),
@@ -102,11 +105,11 @@ def PoolAssignmentsModal(pool: Dict, on_close: Callable, on_save_success: Callab
     available_equipos, set_available_equipos = use_state([])
     assigned_equipos, set_assigned_equipos = use_state([])
 
-    # Estados para la selección en las listas
-    selected_avail_robots, set_selected_avail_robots = use_state(set())
-    selected_asgn_robots, set_selected_asgn_robots = use_state(set())
-    selected_avail_equipos, set_selected_avail_equipos = use_state(set())
-    selected_asgn_equipos, set_selected_asgn_equipos = use_state(set())
+    # RFR-18: Se cambia el estado de 'set' a 'list' para evitar errores de serialización JSON.
+    selected_avail_robots, set_selected_avail_robots = use_state([])
+    selected_asgn_robots, set_selected_asgn_robots = use_state([])
+    selected_avail_equipos, set_selected_avail_equipos = use_state([])
+    selected_asgn_equipos, set_selected_asgn_equipos = use_state([])
 
     @use_effect(dependencies=[pool])
     def _load_data():
@@ -204,7 +207,7 @@ def AssignmentBox(
         items_to_move_ids = {item["ID"] for item in source if item["ID"] in selected_ids}
         set_dest(dest + [item for item in source if item["ID"] in items_to_move_ids])
         set_source([item for item in source if item["ID"] not in items_to_move_ids])
-        set_selected_ids(set())
+        set_selected_ids([])
 
     return html.div(
         {"className": "grid", "style": {"gridTemplateColumns": "5fr 1fr 5fr", "alignItems": "center", "gap": "1rem"}},
@@ -214,7 +217,12 @@ def AssignmentBox(
             html.button(
                 {
                     "onClick": lambda e: move_items(
-                        available_items, set_available_items, assigned_items, set_assigned_items, selected_available_ids, set_selected_available_ids
+                        available_items,
+                        set_available_items,
+                        assigned_items,
+                        set_assigned_items,
+                        selected_available_ids,
+                        set_selected_available_ids,
                     ),
                     "disabled": not selected_available_ids,
                 },
@@ -223,7 +231,12 @@ def AssignmentBox(
             html.button(
                 {
                     "onClick": lambda e: move_items(
-                        assigned_items, set_assigned_items, available_items, set_available_items, selected_assigned_ids, set_selected_assigned_ids
+                        assigned_items,
+                        set_assigned_items,
+                        available_items,
+                        set_available_items,
+                        selected_assigned_ids,
+                        set_selected_assigned_ids,
                     ),
                     "disabled": not selected_assigned_ids,
                 },
@@ -235,16 +248,20 @@ def AssignmentBox(
 
 
 @component
-def ResourceListBox(title: str, items: List[Dict], selected_ids: Set[int], set_selected_ids: Callable):
+def ResourceListBox(title: str, items: List[Dict], selected_ids: List[int], set_selected_ids: Callable):
     """Renderiza una lista de recursos seleccionables."""
 
+    # RFR-18: Se usa un 'set' localmente para optimizar la comprobación 'in',
+    # pero el estado principal sigue siendo una lista.
+    selected_ids_set = use_memo(lambda: set(selected_ids), [selected_ids])
+
     def handle_selection(item_id):
-        new_selection = selected_ids.copy()
-        if item_id in new_selection:
-            new_selection.remove(item_id)
+        new_selection_set = set(selected_ids)
+        if item_id in new_selection_set:
+            new_selection_set.remove(item_id)
         else:
-            new_selection.add(item_id)
-        set_selected_ids(new_selection)
+            new_selection_set.add(item_id)
+        set_selected_ids(list(new_selection_set))
 
     return html.div(
         html.p(html.strong(title)),
@@ -264,7 +281,7 @@ def ResourceListBox(title: str, items: List[Dict], selected_ids: Set[int], set_s
                     html.input(
                         {
                             "type": "checkbox",
-                            "checked": item["ID"] in selected_ids,
+                            "checked": item["ID"] in selected_ids_set,
                             "onChange": lambda e, i_id=item["ID"]: handle_selection(i_id),
                         }
                     ),

@@ -96,6 +96,39 @@ dialog[open] {
   z-index: 1100; /* Asegura que esté por encima del sticky-header */
 }
 
+/* --- Paginación --- */
+.pagination-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: var(--pico-spacing);
+  padding-bottom: var(--pico-spacing);
+}
+.pagination-summary {
+  font-size: 0.875rem;
+  color: var(--pico-secondary);
+}
+.pagination-controls {
+  display: flex;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  gap: 0.25rem;
+}
+.pagination-controls li a {
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--pico-border-radius);
+  text-decoration: none;
+}
+.pagination-controls li a[aria-current="page"] {
+  background-color: var(--pico-primary);
+  color: var(--pico-primary-inverse);
+}
+.pagination-controls li a[disabled] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 /* -------------------------------------------------------------------------- */
 /* COMPONENTES DE DASHBOARD ROBOTS                      */
 /* -------------------------------------------------------------------------- */
@@ -182,6 +215,9 @@ dialog[open] {
 @media (min-width: 1024px) {
   .table-container {
     display: block;
+    /* RFR-16: Se añade una altura máxima y un scroll vertical */
+    max-height: 65vh; /* Altura máxima relativa a la pantalla */
+    overflow-y: auto; /* Muestra el scroll si el contenido excede la altura */
   }
   .cards-container {
     display: none;
@@ -191,6 +227,14 @@ dialog[open] {
   }
   .collapsible-panel {
     display: block; /* Siempre visible en escritorio */
+  }
+  /* RFR-16: Se añade la regla para hacer el encabezado de la tabla pegajoso */
+  .table-container thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background-color: var(--pico-background-color);
+    box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.4); /* Sombra para separación visual */
   }
   .master-controls-grid {
     display: grid;

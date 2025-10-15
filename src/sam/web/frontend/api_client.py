@@ -90,7 +90,6 @@ class ApiClient:
         return await self._request("PATCH", f"/api/robots/{robot_id}", json_data=status_data)
 
     async def delete_robot(self, robot_id: int) -> Dict:
-        # Nota: Este método no parece estar implementado en el backend api.py
         return await self._request("DELETE", f"/api/robots/{robot_id}")
 
     # MÉTODOS PARA ASIGNACIONES
@@ -101,31 +100,27 @@ class ApiClient:
         return await self._request("GET", f"/api/equipos/disponibles/{robot_id}")
 
     async def update_robot_assignments(
-        self, robot_id: int, assign_device_ids: List[int], unassign_device_ids: List[int]
+        self, robot_id: int, assign_ids: List[int], unassign_ids: List[int]
     ) -> Dict:
-        data = {"assign_device_ids": assign_device_ids, "unassign_device_ids": unassign_device_ids}
+        # RFR-34: Se usan los nombres de campo en español que el backend espera.
+        data = {"asignar_equipo_ids": assign_ids, "desasignar_equipo_ids": unassign_ids}
         return await self._request("POST", f"/api/robots/{robot_id}/asignaciones", json_data=data)
 
     # MÉTODOS PARA PROGRAMACIONES (SCHEDULES)
     async def get_all_schedules(self) -> List[Dict]:
-        """Obtiene todas las programaciones."""
         return await self._request("GET", "/api/schedules")
 
     async def get_robot_schedules(self, robot_id: int) -> List[Dict]:
-        """Obtiene las programaciones de un robot."""
         return await self._request("GET", f"/api/schedules/robot/{robot_id}")
 
     async def create_schedule(self, schedule_data: Dict) -> Dict:
-        """Crea una nueva programación."""
         return await self._request("POST", "/api/schedules", json_data=schedule_data)
 
     async def update_schedule(self, schedule_id: int, schedule_data: Dict) -> Dict:
-        """Actualiza una programación existente."""
         return await self._request("PUT", f"/api/schedules/{schedule_id}", json_data=schedule_data)
 
-    async def delete_schedule(self, schedule_id: int) -> Dict:
-        """Elimina una programación."""
-        return await self._request("DELETE", f"/api/schedules/{schedule_id}")
+    async def delete_schedule(self, schedule_id: int, robot_id: int) -> Dict:
+        return await self._request("DELETE", f"/api/schedules/{schedule_id}/robot/{robot_id}")
 
     # MÉTODOS PARA POOLS
     async def get_pools(self) -> List[Dict]:
@@ -143,8 +138,9 @@ class ApiClient:
     async def get_pool_assignments(self, pool_id: int) -> Dict:
         return await self._request("GET", f"/api/pools/{pool_id}/asignaciones")
 
-    async def update_pool_assignments(self, pool_id: int, robot_ids: List[int], device_ids: List[int]) -> Dict:
-        payload = {"robot_ids": robot_ids, "device_ids": device_ids}
+    async def update_pool_assignments(self, pool_id: int, robot_ids: List[int], equipo_ids: List[int]) -> Dict:
+        # RFR-34: Se estandariza el nombre del parámetro y del campo a 'equipo_ids'.
+        payload = {"robot_ids": robot_ids, "equipo_ids": equipo_ids}
         return await self._request("PUT", f"/api/pools/{pool_id}/asignaciones", json_data=payload)
 
     # MÉTODOS UTILITARIOS
@@ -157,7 +153,6 @@ class ApiClient:
             self._client = None
 
 
-# Instancia Singleton del cliente
 _api_client_instance = None
 
 
@@ -166,3 +161,4 @@ def get_api_client() -> ApiClient:
     if _api_client_instance is None:
         _api_client_instance = ApiClient()
     return _api_client_instance
+
