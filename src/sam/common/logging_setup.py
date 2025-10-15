@@ -1,106 +1,72 @@
-# SAM/src/common/logging_setup.py
+# sam/src/common/logging_setup.py
 import logging
-import sys
-from logging.handlers import TimedRotatingFileHandler
+import logging.handlers
+import os
 from pathlib import Path
-from typing import Dict
 
-# Importar ConfigManager para obtener la configuración
+from .config_loader import ConfigLoader
 from .config_manager import ConfigManager
-
-# Variable para asegurar que la configuración se aplique solo una vez
-_is_configured = False
 
 
 class RelativePathFormatter(logging.Formatter):
     """
-    Un formateador de logs que acorta el path del módulo para mayor legibilidad.
-    Transforma 'src.balanceador.service.main' en 'service.main'.
+    Un formateador de logs que convierte las rutas absolutas de los archivos
+    en rutas relativas a la raíz del proyecto, haciendo los logs más limpios.
     """
 
-    def __init__(self, *args, service_name: str, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.service_name = service_name
-        self.common_prefix = "src.common."
-        self.service_prefix = f"src.{service_name}."
+        self.project_root = str(ConfigLoader.get_project_root())
 
     def format(self, record):
-        # Hacemos una copia para no modificar el registro original
-        original_name = record.name
-
-        if original_name.startswith(self.service_prefix):
-            record.name = original_name[len(self.service_prefix) :]
-        elif original_name.startswith(self.common_prefix):
-            record.name = original_name[len(self.common_prefix) :]
-
-        # Llamamos al formateador original con el nombre modificado
-        result = super().format(record)
-
-        # Restauramos el nombre original por si el registro se usa en otro lugar
-        record.name = original_name
-        return result
-
-
-class RobustTimedRotatingFileHandler(TimedRotatingFileHandler):
-    """
-    Una versión más robusta de TimedRotatingFileHandler que maneja errores de permisos
-    en entornos Windows, reintentando la rotación del archivo de log.
-    """
-
-    def doRollover(self):
-        """Sobrescribe el método doRollover para manejar errores de permisos."""
-        try:
-            super().doRollover()
-        except (OSError, PermissionError) as e:
-            # En Windows, si el archivo está en uso, puede lanzar PermissionError.
-            # Se registra el error en stderr y se continúa sin rotar.
-            sys.stderr.write(f"LOGGING_SETUP: No se pudo rotar el archivo de log. Error: {e}\n")
-        except Exception as e:
-            sys.stderr.write(f"LOGGING_SETUP: Error inesperado al rotar el archivo de log: {e}\n")
+        if hasattr(record, "pathname") and record.pathname.startswith(self.project_root):
+            record.pathname = os.path.relpath(record.pathname, self.project_root)
+        return super().format(record)
 
 
 def setup_logging(service_name: str):
     """
-    Configura el logger raíz para un servicio específico.
+    Configura el sistema de logging para un servicio específico.
+    Utiliza TimedRotatingFileHandler para rotar los logs diariamente.
     """
-    global _is_configured
-    if _is_configured:
-        return
-
     log_config = ConfigManager.get_log_config()
-    log_filename = log_config.get(f"app_log_filename_{service_name}", f"sam_{service_name}_app.log")
-    log_directory = Path(log_config.get("directory", "C:/RPA/Logs/SAM"))
-    log_file_path = log_directory / log_filename
+    log_directory = Path(log_config["directory"])
     log_directory.mkdir(parents=True, exist_ok=True)
 
-    # CORREGIDO: Usamos nuestro nuevo formateador personalizado
-    log_formatter = RelativePathFormatter(
-        fmt=log_config.get("format"),
-        datefmt=log_config.get("datefmt"),
-        service_name=service_name,  # Le pasamos el nombre del servicio
+    # Determinar el nombre del archivo de log para el servicio actual
+    log_filename_key = f"app_log_filename_{service_name}"
+    log_filename = log_config.get(log_filename_key, f"sam_{service_name}_app.log")
+    log_file_path = log_directory / log_filename
+
+    # Configurar el nivel de logging
+    log_level_str = log_config.get("level_str", "INFO").upper()
+    log_level = getattr(logging, log_level_str, logging.INFO)
+
+    # Crear el formateador con la ruta relativa
+    formatter = RelativePathFormatter(log_config["format"], datefmt=log_config["datefmt"])
+
+    # Configurar el handler de rotación de archivos
+    file_handler = logging.handlers.TimedRotatingFileHandler(
+        log_file_path,
+        when=log_config["when"],
+        interval=log_config["interval"],
+        backupCount=log_config["backupCount"],
+        encoding=log_config["encoding"],
     )
+    file_handler.setFormatter(formatter)
 
-    file_handler = RobustTimedRotatingFileHandler(
-        filename=log_file_path,
-        when=log_config.get("when", "midnight"),
-        interval=log_config.get("interval", 1),
-        backupCount=log_config.get("backupCount", 7),
-        encoding=log_config.get("encoding", "utf-8"),
-    )
-    file_handler.setFormatter(log_formatter)
+    # Configurar el handler de la consola (para ver los logs en la terminal)
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
 
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(log_formatter)
-
+    # Configurar el logger raíz para que envíe los logs a ambos handlers
     root_logger = logging.getLogger()
-    root_logger.setLevel(log_config.get("level_str", "INFO").upper())
+    root_logger.setLevel(log_level)
+    root_logger.handlers = [file_handler, console_handler]
 
-    if root_logger.hasHandlers():
-        root_logger.handlers.clear()
+    # RFR-33: Se añade esta línea para silenciar los logs de INFO de httpx.
+    # Esto limpia la consola de mensajes de peticiones HTTP exitosas,
+    # pero seguirá mostrando WARNINGS y ERRORS de la librería.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
-    root_logger.addHandler(file_handler)
-    root_logger.addHandler(console_handler)
-
-    _is_configured = True
-    # Usamos print para este mensaje inicial, ya que el logger acaba de ser configurado.
-    print(f"Logging configurado para el servicio '{service_name}'. Los logs se guardarán en: {log_file_path}")
+    logging.info(f"Logging configurado para el servicio '{service_name}'. Los logs se guardarán en: {log_file_path}")

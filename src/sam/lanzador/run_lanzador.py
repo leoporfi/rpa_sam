@@ -25,6 +25,7 @@ service_instance: Optional[LanzadorService] = None
 
 # --- Manejo de Cierre Ordenado (Graceful Shutdown) ---
 def graceful_shutdown(signum, frame):
+    """Maneja las señales de cierre de forma ordenada."""
     logging.info(f"Señal de parada recibida (Señal: {signum}). Iniciando cierre ordenado...")
     if service_instance:
         service_instance.stop()
@@ -43,6 +44,9 @@ async def main_async():
     gateway_client = None
 
     try:
+        signal.signal(signal.SIGINT, graceful_shutdown)
+        signal.signal(signal.SIGTERM, graceful_shutdown)
+
         logging.info("Creando todas las dependencias del servicio...")
         # Configuración
         lanzador_cfg = ConfigManager.get_lanzador_config()
@@ -59,7 +63,6 @@ async def main_async():
             contrasena=cfg_sql_sam["contrasena"],
         )
 
-        # --- CORRECCIÓN AQUÍ ---
         # Se pasan los argumentos de forma explícita y correcta.
         # 'password' es opcional y 'api_key' se pasa como keyword argument.
         aa_client = AutomationAnywhereClient(
@@ -103,6 +106,10 @@ async def main_async():
         logging.info("Iniciando el ciclo principal del orquestador...")
         await service_instance.run()
 
+    except KeyboardInterrupt:
+        logging.info("Interrupción de teclado detectada (Ctrl+C).")
+        if service_instance:
+            service_instance.stop()
     except Exception as e:
         logging.critical(f"Error crítico no controlado en el servicio {SERVICE_NAME}: {e}", exc_info=True)
     finally:

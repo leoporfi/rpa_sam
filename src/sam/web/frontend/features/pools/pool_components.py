@@ -63,7 +63,8 @@ def PoolsTable(pools: List[Dict], on_edit: Callable, on_assign: Callable, on_del
             html.tbody(
                 *[PoolRow(pool=p, on_edit=on_edit, on_assign=on_assign, on_delete=on_delete) for p in pools]
                 if pools
-                else html.tr(html.td({"col_span": 5, "style": {"text_align": "center"}}, "No se encontraron pools."))
+                # RFR-17: Mensaje descriptivo cuando no hay datos.
+                else html.tr(html.td({"colSpan": 5, "style": {"textAlign": "center"}}, "No se encontraron pools."))
             ),
         )
     )
@@ -81,9 +82,34 @@ def PoolRow(pool: Dict, on_edit: Callable, on_assign: Callable, on_delete: Calla
         html.td(
             html.div(
                 {"class_name": "grid"},
-                html.a({"href": "#", "on_click": event(lambda e: on_edit(pool), prevent_default=True), "data-tooltip": "Editar Pool", "class_name": "secondary"}, html.i({"class_name": "fa-solid fa-pencil"})),
-                html.a({"href": "#", "on_click": event(lambda e: on_assign(pool), prevent_default=True), "data-tooltip": "Asignar Recursos", "class_name": "secondary"}, html.i({"class_name": "fa-solid fa-link"})),
-                html.a({"href": "#", "on_click": event(lambda e: on_delete(pool), prevent_default=True), "data-tooltip": "Eliminar Pool", "data-placement": "left", "class_name": "secondary"}, html.i({"class_name": "fa-solid fa-trash-alt"})),
+                html.a(
+                    {
+                        "href": "#",
+                        "on_click": event(lambda e: on_edit(pool), prevent_default=True),
+                        "data-tooltip": "Editar Pool",
+                        "class_name": "secondary",
+                    },
+                    html.i({"class_name": "fa-solid fa-pencil"}),
+                ),
+                html.a(
+                    {
+                        "href": "#",
+                        "on_click": event(lambda e: on_assign(pool), prevent_default=True),
+                        "data-tooltip": "Asignar Recursos",
+                        "class_name": "secondary",
+                    },
+                    html.i({"class_name": "fa-solid fa-link"}),
+                ),
+                html.a(
+                    {
+                        "href": "#",
+                        "on_click": event(lambda e: on_delete(pool), prevent_default=True),
+                        "data-tooltip": "Eliminar Pool",
+                        "data-placement": "left",
+                        "class_name": "secondary",
+                    },
+                    html.i({"class_name": "fa-solid fa-trash-alt"}),
+                ),
             )
         ),
     )
@@ -114,4 +140,3 @@ def PoolCard(pool: Dict, on_edit: Callable, on_assign: Callable, on_delete: Call
             html.button({"class_name": "outline secondary", "on_click": lambda e: on_delete(pool)}, "Eliminar"),
         ),
     )
-

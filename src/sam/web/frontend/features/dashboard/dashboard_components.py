@@ -104,11 +104,25 @@ def RobotDashboard(robots: List[Robot], on_action: Callable, robots_state: Dict,
     error = robots_state["error"]
     current_page = robots_state["current_page"]
     total_pages = robots_state["total_pages"]
+    total_count = robots_state["total_count"]
+    page_size = robots_state["page_size"]
 
     if error:
         return html.article({"aria_invalid": "true"}, f"Error al cargar datos: {error}")
     if loading and not robots:
         return LoadingSpinner()
+
+    pagination_component = (
+        Pagination(
+            current_page=current_page,
+            total_pages=total_pages,
+            total_items=total_count,
+            items_per_page=page_size,
+            on_page_change=set_current_page,
+        )
+        if total_pages > 1
+        else None
+    )
 
     return html._(
         html.div(
@@ -125,7 +139,7 @@ def RobotDashboard(robots: List[Robot], on_action: Callable, robots_state: Dict,
                 on_sort=robots_state["handle_sort"],
             ),
         ),
-        Pagination(current_page=current_page, total_pages=total_pages, on_page_change=set_current_page) if total_pages > 1 else None,
+        pagination_component,
     )
 
 
@@ -166,7 +180,11 @@ def RobotTable(robots: List[Robot], on_action: Callable, sort_by: str, sort_dir:
                 *[RobotRow(robot=robot, on_action=on_action) for robot in robots]
                 if robots
                 else html.tr(
-                    html.td({"col_span": len(table_headers), "style": {"text_align": "center", "padding": "2rem"}}, "No se encontraron robots.")
+                    # RFR-17: Mensaje descriptivo cuando no hay datos.
+                    html.td(
+                        {"colSpan": len(table_headers), "style": {"textAlign": "center"}},
+                        "No se encontraron robots.",
+                    )
                 )
             ),
         )
@@ -175,10 +193,20 @@ def RobotTable(robots: List[Robot], on_action: Callable, sort_by: str, sort_dir:
 
 @component
 def RobotRow(robot: Robot, on_action: Callable):
-    # async def handle_action(action_name: str, event_data=None):
-    #     await on_action(action_name, robot)
-    def handle_action(action_name: str):
-        on_action(action_name, robot)
+    async def handle_toggle_active(event):
+        await on_action("toggle_active", robot)
+
+    async def handle_toggle_online(event):
+        await on_action("toggle_online", robot)
+
+    async def handle_edit(event):
+        await on_action("edit", robot)
+
+    async def handle_assign(event):
+        await on_action("assign", robot)
+
+    async def handle_schedule(event):
+        await on_action("schedule", robot)
 
     return html.tr(
         {"key": robot["RobotId"]},
@@ -192,7 +220,7 @@ def RobotRow(robot: Robot, on_action: Callable):
                             "type": "checkbox",
                             "role": "switch",
                             "checked": robot["Activo"],
-                            "on_change": event(lambda e: handle_action("toggle_active")),
+                            "on_change": event(handle_toggle_active),
                         }
                     )
                 )
@@ -206,7 +234,7 @@ def RobotRow(robot: Robot, on_action: Callable):
                             "type": "checkbox",
                             "role": "switch",
                             "checked": robot["EsOnline"],
-                            "on_change": event(lambda e: handle_action("toggle_online")),
+                            "on_change": event(handle_toggle_online),
                         }
                     )
                 )
@@ -221,7 +249,7 @@ def RobotRow(robot: Robot, on_action: Callable):
                 html.a(
                     {
                         "href": "#",
-                        "on_click": event(lambda e: handle_action("edit"), prevent_default=True),
+                        "on_click": event(handle_edit, prevent_default=True),
                         "data-tooltip": "Editar Robot",
                         "class_name": "secondary",
                     },
@@ -230,7 +258,7 @@ def RobotRow(robot: Robot, on_action: Callable):
                 html.a(
                     {
                         "href": "#",
-                        "on_click": event(lambda e: handle_action("assign"), prevent_default=True),
+                        "on_click": event(handle_assign, prevent_default=True),
                         "data-tooltip": "Asignar Equipos",
                         "class_name": "secondary",
                     },
@@ -239,7 +267,7 @@ def RobotRow(robot: Robot, on_action: Callable):
                 html.a(
                     {
                         "href": "#",
-                        "on_click": event(lambda e: handle_action("schedule"), prevent_default=True),
+                        "on_click": event(handle_schedule, prevent_default=True),
                         "data-tooltip": "Programar Tareas",
                         "data-placement": "left",
                         "class_name": "secondary",
@@ -253,10 +281,20 @@ def RobotRow(robot: Robot, on_action: Callable):
 
 @component
 def RobotCard(robot: Robot, on_action: Callable):
-    # async def handle_action(action_name: str, event_data=None):
-    #     await on_action(action_name, robot)
-    def handle_action(action_name: str):
-        on_action(action_name, robot)
+    async def handle_toggle_active(event):
+        await on_action("toggle_active", robot)
+
+    async def handle_toggle_online(event):
+        await on_action("toggle_online", robot)
+
+    async def handle_edit(event):
+        await on_action("edit", robot)
+
+    async def handle_assign(event):
+        await on_action("assign", robot)
+
+    async def handle_schedule(event):
+        await on_action("schedule", robot)
 
     return html.article(
         {"key": robot["RobotId"], "class_name": "robot-card"},
@@ -274,7 +312,7 @@ def RobotCard(robot: Robot, on_action: Callable):
                             "type": "checkbox",
                             "role": "switch",
                             "checked": robot["Activo"],
-                            "on_change": event(lambda e: handle_action("toggle_active")),
+                            "on_change": event(handle_toggle_active),
                         }
                     ),
                     "Activo",
@@ -285,7 +323,7 @@ def RobotCard(robot: Robot, on_action: Callable):
                             "type": "checkbox",
                             "role": "switch",
                             "checked": robot["EsOnline"],
-                            "on_change": event(lambda e: handle_action("toggle_online")),
+                            "on_change": event(handle_toggle_online),
                         }
                     ),
                     "Online",
@@ -296,8 +334,8 @@ def RobotCard(robot: Robot, on_action: Callable):
         ),
         html.footer(
             {"class_name": "robot-card-footer"},
-            html.button({"class_name": "outline secondary", "on_click": event(lambda e: handle_action("edit"))}, "Editar"),
-            html.button({"class_name": "outline secondary", "on_click": event(lambda e: handle_action("assign"))}, "Asignar"),
-            html.button({"class_name": "outline secondary", "on_click": event(lambda e: handle_action("schedule"))}, "Programar"),
+            html.button({"class_name": "outline secondary", "on_click": event(handle_edit)}, "Editar"),
+            html.button({"class_name": "outline secondary", "on_click": event(handle_assign)}, "Asignar"),
+            html.button({"class_name": "outline secondary", "on_click": event(handle_schedule)}, "Programar"),
         ),
     )

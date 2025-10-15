@@ -56,7 +56,10 @@ def use_robots():
 
     # --- NUEVA FUNCIÓN DE SINCRONIZACIÓN ---
     @use_callback
-    async def trigger_sync():
+    async def trigger_sync(event=None):  # RFR-03: Se añade `event=None`.
+        # El handler de evento `on_click` de Reactpy pasa un dict del evento.
+        # La función original no aceptaba argumentos, causando un TypeError.
+        # Añadir un argumento opcional soluciona el problema.
         if is_syncing:
             return
         set_is_syncing(True)
