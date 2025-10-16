@@ -147,8 +147,14 @@ def update_schedule(schedule_id: int, data: ScheduleData, db: DatabaseConnector 
 # --- Rutas para Equipos ---
 @router.get("/api/equipos/disponibles/{robot_id}", tags=["Equipos"])
 def get_available_devices(robot_id: int, db: DatabaseConnector = Depends(get_db)):
+    """
+    Endpoint para obtener equipos disponibles. El robot_id se mantiene por
+    compatibilidad con la ruta, pero la lógica de negocio (BR-05, BR-06)
+    ya no lo requiere.
+    """
     try:
-        return db_service.get_available_teams_for_robot(db, robot_id)
+        # La llamada al servicio ya no necesita el robot_id.
+        return db_service.get_available_teams_for_robot(db)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al obtener equipos disponibles: {e}")
 
@@ -249,4 +255,3 @@ def set_pool_assignments(pool_id: int, data: PoolAssignmentsRequest, db: Databas
         if "No se encontró un pool" in error_message:
             raise HTTPException(status_code=404, detail=error_message)
         raise HTTPException(status_code=500, detail=f"Error al actualizar asignaciones: {error_message}")
-

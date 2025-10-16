@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict, List
 from reactpy import component, event, html, use_callback, use_context, use_effect, use_memo, use_state
 
 from ...api_client import ApiClient, get_api_client
+from ...shared.common_components import ConfirmationModal
 from ...shared.notifications import NotificationContext
 
 # --- Constantes y Estados por Defecto ---
@@ -351,6 +352,9 @@ def AssignmentsModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_s
     selected_in_available, set_selected_in_available = use_state([])
     selected_in_assigned, set_selected_in_assigned = use_state([])
 
+    # Nuevo estado para el modal de confirmación
+    confirmation_data, set_confirmation_data = use_state(None)
+
     notification_ctx = use_context(NotificationContext)
     show_notification = notification_ctx["show_notification"]
     api_service = get_api_client()
@@ -399,27 +403,36 @@ def AssignmentsModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_s
         set_source([item for item in source_list if item["EquipoId"] not in items_to_move])
         clear_selection([])
 
-    async def handle_save(event_data):
+    async def execute_save():
+        """Función que ejecuta el guardado después de la confirmación."""
+        if not confirmation_data:
+            return
         set_is_loading(True)
         try:
-            original_assigned_ids_set = {
-                t["EquipoId"] for t in (await api_service.get_robot_assignments(robot["RobotId"]))
-            }
-            current_assigned_ids_set = {t["EquipoId"] for t in assigned_devices}
-
-            ids_to_assign = list(current_assigned_ids_set - original_assigned_ids_set)
-            ids_to_unassign = list(original_assigned_ids_set - current_assigned_ids_set)
-
-            if ids_to_assign or ids_to_unassign:
-                await api_service.update_robot_assignments(robot["RobotId"], ids_to_assign, ids_to_unassign)
-                await on_save_success()
-                show_notification("Se actualizó la asignación correctamente", "success")
-            else:
-                on_close()
+            ids_to_assign, ids_to_unassign = confirmation_data["assign"], confirmation_data["unassign"]
+            await api_service.update_robot_assignments(robot["RobotId"], ids_to_assign, ids_to_unassign)
+            await on_save_success()
+            show_notification("Se actualizó la asignación correctamente", "success")
+            on_close()
         except Exception as e:
             show_notification(f"Error al guardar: {e}", "error")
         finally:
             set_is_loading(False)
+            set_confirmation_data(None)
+
+    async def handle_save(event_data):
+        original_assigned_ids_set = {t["EquipoId"] for t in (await api_service.get_robot_assignments(robot["RobotId"]))}
+        current_assigned_ids_set = {t["EquipoId"] for t in assigned_devices}
+
+        ids_to_assign = list(current_assigned_ids_set - original_assigned_ids_set)
+        ids_to_unassign = list(original_assigned_ids_set - current_assigned_ids_set)
+
+        if not ids_to_assign and not ids_to_unassign:
+            on_close()
+            return
+
+        # Abre el modal de confirmación si hay cambios que guardar.
+        set_confirmation_data({"assign": ids_to_assign, "unassign": ids_to_unassign})
 
     if not robot:
         return None
@@ -493,6 +506,14 @@ def AssignmentsModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_s
                     {"aria-busy": str(is_loading).lower(), "onClick": handle_save, "disabled": is_loading}, "Guardar"
                 ),
             ),
+        ),
+        # Añadir el modal de confirmación
+        ConfirmationModal(
+            is_open=bool(confirmation_data),
+            title="Confirmar Cambios",
+            message="¿Estás seguro de que quieres modificar las asignaciones de equipos para este robot?",
+            on_confirm=execute_save,
+            on_cancel=lambda: set_confirmation_data(None),
         ),
     )
 
@@ -598,6 +619,8 @@ def SchedulesModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_suc
             html._(
                 SchedulesList(
                     api_service=api_service,
+                    robot_id=robot["RobotId"],
+                    robot_nombre=robot["Robot"],
                     schedules=schedules,
                     on_edit=handle_edit_click,
                     on_delete_success=handle_successful_change,
@@ -620,7 +643,18 @@ def SchedulesModal(robot: Dict[str, Any] | None, on_close: Callable, on_save_suc
 
 
 @component
-def SchedulesList(api_service: ApiClient, schedules: List[Dict], on_edit: Callable, on_delete_success: Callable):
+def SchedulesList(
+    api_service: ApiClient,
+    robot_id: int,
+    robot_nombre: str,
+    schedules: List[Dict],
+    on_edit: Callable,
+    on_delete_success: Callable,
+):
+    notification_ctx = use_context(NotificationContext)
+    show_notification = notification_ctx["show_notification"]
+    schedule_to_delete, set_schedule_to_delete = use_state(None)
+
     def format_schedule_details(schedule):
         details = f"{schedule.get('TipoProgramacion', 'N/A')} a las {schedule.get('HoraInicio', '')}"
         tipo = schedule.get("TipoProgramacion")
@@ -632,6 +666,18 @@ def SchedulesList(api_service: ApiClient, schedules: List[Dict], on_edit: Callab
             details += f" en la fecha {schedule.get('FechaEspecifica', '')}"
         return details
 
+    async def handle_confirm_delete():
+        if not schedule_to_delete:
+            return
+        try:
+            await api_service.delete_schedule(schedule_to_delete["ProgramacionId"], robot_id)
+            show_notification("Programación eliminada.", "success")
+            await on_delete_success()
+        except Exception as e:
+            show_notification(str(e), "error")
+        finally:
+            set_schedule_to_delete(None)
+
     rows = use_memo(
         lambda: [
             html.tr(
@@ -642,10 +688,9 @@ def SchedulesList(api_service: ApiClient, schedules: List[Dict], on_edit: Callab
                     html.div(
                         {"className": "grid"},
                         html.button({"className": "outline", "onClick": lambda e, sch=s: on_edit(sch)}, "Editar"),
-                        DeleteButton(
-                            api_service=api_service,
-                            schedule_id=s["ProgramacionId"],
-                            on_delete_success=on_delete_success,
+                        html.button(
+                            {"className": "secondary outline", "onClick": lambda e, sch=s: set_schedule_to_delete(sch)},
+                            "Eliminar",
                         ),
                     )
                 ),
@@ -654,39 +699,22 @@ def SchedulesList(api_service: ApiClient, schedules: List[Dict], on_edit: Callab
         ],
         [schedules, on_edit, on_delete_success],
     )
-    return html.table(
-        html.thead(html.tr(html.th("Detalles"), html.th("Equipos"), html.th("Acciones"))),
-        html.tbody(
-            rows
-            if rows
-            else html.tr(html.td({"colSpan": 3, "style": {"textAlign": "center"}}, "No hay programaciones."))
+    return html._(
+        html.table(
+            html.thead(html.tr(html.th("Detalles"), html.th("Equipos"), html.th("Acciones"))),
+            html.tbody(
+                rows
+                if rows
+                else html.tr(html.td({"colSpan": 3, "style": {"textAlign": "center"}}, "No hay programaciones."))
+            ),
         ),
-    )
-
-
-@component
-def DeleteButton(api_service: ApiClient, schedule_id: int, on_delete_success: Callable):
-    notification_ctx = use_context(NotificationContext)
-    show_notification = notification_ctx["show_notification"]
-    is_deleting, set_is_deleting = use_state(False)
-
-    async def delete_schedule(event):
-        if is_deleting:
-            return
-        set_is_deleting(True)
-        try:
-            await api_service.delete_schedule(schedule_id)
-            show_notification("Programación eliminada.", "success")
-            await on_delete_success()
-        except Exception as e:
-            show_notification(str(e), "error")
-        finally:
-            set_is_deleting(False)
-
-    handle_click = use_callback(delete_schedule, [schedule_id, is_deleting])
-    return html.button(
-        {"className": "secondary outline", "onClick": handle_click, "disabled": is_deleting, "aria-busy": is_deleting},
-        "Eliminar",
+        ConfirmationModal(
+            is_open=bool(schedule_to_delete),
+            title="Confirmar Eliminación",
+            message=f"¿Estás seguro de que quieres eliminar la programación para '{robot_nombre}'?",
+            on_confirm=handle_confirm_delete,
+            on_cancel=lambda: set_schedule_to_delete(None),
+        ),
     )
 
 
@@ -820,8 +848,6 @@ def ConditionalFields(tipo: str, form_data: Dict, on_change: Callable):
 @component
 def DeviceSelector(available_devices: List[Dict], selected_devices: List[int], on_change: Callable):
     safe_selected_devices = selected_devices or []
-    # RFR-21: Se eliminan todas las instancias de 'set' para asegurar la serialización JSON.
-    # La lógica ahora opera exclusivamente con listas.
     all_available_ids = use_memo(lambda: [device["EquipoId"] for device in available_devices], [available_devices])
     are_all_devices_selected = len(safe_selected_devices) > 0 and all(
         item in safe_selected_devices for item in all_available_ids

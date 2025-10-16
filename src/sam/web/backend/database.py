@@ -3,11 +3,12 @@ import asyncio
 import logging
 from typing import Dict, List, Optional
 
-# RFR-29: Se importa el nuevo sincronizador común
-from sam.common.sincronizador_comun import SincronizadorComun
 from sam.common.a360_client import AutomationAnywhereClient
 from sam.common.config_manager import ConfigManager
 from sam.common.database import DatabaseConnector
+
+# RFR-29: Se importa el nuevo sincronizador común
+from sam.common.sincronizador_comun import SincronizadorComun
 
 from .schemas import RobotCreateRequest, RobotUpdateRequest, ScheduleData
 
@@ -148,6 +149,7 @@ def update_asignaciones_robot(
 
     try:
         with db.obtener_cursor() as cursor:
+            # 1. Desasignar equipos
             if unassign_ids:
                 unassign_placeholders = ",".join("?" for _ in unassign_ids)
                 unassign_query = (
@@ -155,6 +157,7 @@ def update_asignaciones_robot(
                 )
                 cursor.execute(unassign_query, robot_id, *unassign_ids)
 
+            # 2. Asignar nuevos equipos
             if assign_ids:
                 assign_query = """
                     INSERT INTO dbo.Asignaciones (RobotId, EquipoId, EsProgramado, Reservado, AsignadoPor)
@@ -170,16 +173,22 @@ def update_asignaciones_robot(
         raise
 
 
-def get_available_teams_for_robot(db: DatabaseConnector, robot_id: int) -> List[Dict]:
+def get_available_teams_for_robot(db: DatabaseConnector) -> List[Dict]:
+    """
+    Obtiene todos los equipos que no están asignados a ningún robot y tienen una licencia válida.
+    Cumple con las reglas de negocio BR-05 y BR-06.
+    """
     query = """
         SELECT EquipoId, Equipo FROM dbo.Equipos
-        WHERE Activo_SAM = 1 AND PermiteBalanceoDinamico = 1
-        AND EquipoId NOT IN (
-            SELECT EquipoId FROM dbo.Asignaciones WHERE RobotId = ?
-        )
+        WHERE 
+            Activo_SAM = 1 
+            AND Licencia IN ('ATTENDEDRUNTIME', 'RUNTIME')
+            AND EquipoId NOT IN (
+                SELECT EquipoId FROM dbo.Asignaciones WHERE EquipoId IS NOT NULL
+            )
         ORDER BY Equipo
     """
-    return db.ejecutar_consulta(query, (robot_id,), es_select=True)
+    return db.ejecutar_consulta(query, es_select=True)
 
 
 # Programaciones
@@ -358,15 +367,14 @@ async def sync_with_a360(db: DatabaseConnector) -> Dict:
         )
         # Se instancia el sincronizador común, inyectando las dependencias
         sincronizador = SincronizadorComun(db_connector=db, aa_client=aa_client)
-        
+
         # Se ejecuta la lógica centralizada
         summary = await sincronizador.sincronizar_entidades()
-        
+
         # Se asegura el cierre del cliente http
         await aa_client.close()
-        
+
         return summary
     except Exception as e:
         logger.critical(f"Error fatal durante la sincronización web: {type(e).__name__} - {e}", exc_info=True)
         raise
-

@@ -1,11 +1,13 @@
-# sam/web/features/pools/pool_modals.py
-
+# ---------------------------------------------------------------------------
+# ARCHIVO: src/interfaz_web/features/pools/modals.py
+# ---------------------------------------------------------------------------
 import asyncio
 from typing import Callable, Dict, List
 
 from reactpy import component, event, html, use_context, use_effect, use_memo, use_state
 
 from ...api_client import get_api_client
+from ...shared.common_components import ConfirmationModal
 from ...shared.notifications import NotificationContext
 
 DEFAULT_POOL_STATE = {"PoolId": None, "Nombre": "", "Descripcion": ""}
@@ -98,6 +100,7 @@ def PoolAssignmentsModal(pool: Dict, on_close: Callable, on_save_success: Callab
     api_client = get_api_client()
     notification_ctx = use_context(NotificationContext)
     is_loading, set_is_loading = use_state(True)
+    is_confirming, set_is_confirming = use_state(False)  # Estado para el modal de confirmación
 
     # Estados para cada tipo de recurso
     available_robots, set_available_robots = use_state([])
@@ -134,8 +137,10 @@ def PoolAssignmentsModal(pool: Dict, on_close: Callable, on_save_success: Callab
     if not pool:
         return None
 
-    async def handle_save(e):
+    async def execute_save():
+        """Función que se ejecuta tras la confirmación."""
         set_is_loading(True)
+        set_is_confirming(False)
         try:
             robot_ids = [r["ID"] for r in assigned_robots]
             team_ids = [eq["ID"] for eq in assigned_equipos]
@@ -147,6 +152,10 @@ def PoolAssignmentsModal(pool: Dict, on_close: Callable, on_save_success: Callab
             notification_ctx["show_notification"](f"Error al guardar asignaciones: {e}", "error")
         finally:
             set_is_loading(False)
+
+    async def handle_save(e):
+        # En lugar de guardar directamente, abre el modal de confirmación
+        set_is_confirming(True)
 
     return html.dialog(
         {"open": True, "style": {"maxWidth": "90vw", "width": "1200px"}},
@@ -186,6 +195,13 @@ def PoolAssignmentsModal(pool: Dict, on_close: Callable, on_save_success: Callab
                     html.button({"onClick": handle_save}, "Guardar Cambios"),
                 )
             ),
+        ),
+        ConfirmationModal(
+            is_open=is_confirming,
+            title="Confirmar Asignaciones",
+            message=f"¿Estás seguro de que quieres guardar los cambios en las asignaciones para el pool '{pool.get('Nombre')}'?",
+            on_confirm=execute_save,
+            on_cancel=lambda: set_is_confirming(False),
         ),
     )
 
@@ -256,12 +272,12 @@ def ResourceListBox(title: str, items: List[Dict], selected_ids: List[int], set_
     selected_ids_set = use_memo(lambda: set(selected_ids), [selected_ids])
 
     def handle_selection(item_id):
-        new_selection_set = set(selected_ids)
-        if item_id in new_selection_set:
-            new_selection_set.remove(item_id)
+        current_selection = list(selected_ids)
+        if item_id in current_selection:
+            current_selection.remove(item_id)
         else:
-            new_selection_set.add(item_id)
-        set_selected_ids(list(new_selection_set))
+            current_selection.append(item_id)
+        set_selected_ids(current_selection)
 
     return html.div(
         html.p(html.strong(title)),

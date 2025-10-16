@@ -25,6 +25,7 @@ class SincronizadorComun:
         """
         self._db_connector = db_connector
         self._aa_client = aa_client
+        self._valid_licenses = {"ATTENDEDRUNTIME", "RUNTIME"}
 
     async def sincronizar_entidades(self) -> Dict[str, int]:
         """
@@ -38,7 +39,9 @@ class SincronizadorComun:
             users_task = self._aa_client.obtener_usuarios_detallados()
 
             robots_api, devices_api, users_api = await asyncio.gather(robots_task, devices_task, users_task)
-            logger.info(f"Datos recibidos de A360: {len(robots_api)} robots, {len(devices_api)} dispositivos, {len(users_api)} usuarios.")
+            logger.info(
+                f"Datos recibidos de A360: {len(robots_api)} robots, {len(devices_api)} dispositivos, {len(users_api)} usuarios."
+            )
 
             equipos_finales = self._procesar_y_mapear_equipos(devices_api, users_api)
 
@@ -46,7 +49,9 @@ class SincronizadorComun:
             self._db_connector.merge_robots(robots_api)
             self._db_connector.merge_equipos(equipos_finales)
 
-            logger.info(f"Sincronización completada. {len(robots_api)} robots y {len(equipos_finales)} equipos procesados.")
+            logger.info(
+                f"Sincronización completada. {len(robots_api)} robots y {len(equipos_finales)} equipos procesados."
+            )
             return {"robots_sincronizados": len(robots_api), "equipos_sincronizados": len(equipos_finales)}
 
         except Exception as e:
@@ -62,27 +67,46 @@ class SincronizadorComun:
             logger.warning("La lista de dispositivos de la API está vacía.")
             return []
 
-        users_by_id = {user["id"]: user for user in users_list if isinstance(user, dict) and "id" in user}
+        # users_by_id = {user["id"]: user for user in users_list if isinstance(user, dict) and "id" in user}
+        # 1. Filtrar usuarios que tengan al menos una de las licencias válidas.
+        users_by_id = {
+            user["id"]: user
+            for user in users_list
+            if isinstance(user, dict)
+            and "id" in user
+            and any(lic in self._valid_licenses for lic in user.get("licenseFeatures", []))
+        }
+        logger.info(f"Se filtraron {len(users_by_id)} usuarios (de {len(users_list)}) con licencias válidas.")
 
         equipos_procesados = []
         for device in devices_list:
-            # RFR-32: Corrección para extraer el user_id de la estructura anidada.
-            # La API de Devices devuelve el usuario dentro de 'defaultUsers'.
-            user_id = None
-            if device.get("defaultUsers") and isinstance(device["defaultUsers"], list) and len(device["defaultUsers"]) > 0:
-                user_id = device["defaultUsers"][0].get("id")
+            default_users = device.get("defaultUsers", [])
+            valid_user_info = None
 
-            user_info = users_by_id.get(user_id, {})
+            # 1. Iterar sobre la lista de usuarios del dispositivo.
+            if isinstance(default_users, list):
+                for user_ref in default_users:
+                    user_id = user_ref.get("id")
+                    # 2. Comprobar si este usuario está en nuestro diccionario de usuarios válidos.
+                    if user_id in users_by_id:
+                        # 3. Si se encuentra, guardamos su información y rompemos el bucle.
+                        valid_user_info = users_by_id[user_id]
+                        break  # Nos quedamos con el primero que encontramos.
 
-            equipo_mapeado = {
-                "EquipoId": device.get("id"),
-                "Equipo": device.get("hostName"),
-                "UserId": user_id,
-                "UserName": user_info.get("username"),
-                "Licencia": ", ".join(user_info.get("licenseFeatures", [])),
-                "Activo_SAM": device.get("status") == "CONNECTED",
-            }
-            equipos_procesados.append(equipo_mapeado)
+            if valid_user_info:
+                equipo_mapeado = {
+                    "EquipoId": device.get("id"),
+                    "Equipo": device.get("hostName"),
+                    "UserId": valid_user_info.get("id"),
+                    "UserName": valid_user_info.get("username"),
+                    "Licencia": ", ".join(valid_user_info.get("licenseFeatures", [])),
+                    "Activo_SAM": device.get("status") == "CONNECTED",
+                }
+                equipos_procesados.append(equipo_mapeado)
+            else:
+                logger.debug(
+                    f"Omitiendo dispositivo '{device.get('hostName')}' (ID: {device.get('id')}) porque ninguno de sus usuarios asociados tiene una licencia válida."
+                )
 
         equipos_unicos = {}
         for equipo in equipos_procesados:
@@ -94,4 +118,3 @@ class SincronizadorComun:
                     logger.warning(f"Se encontró un EquipoId duplicado de A360 y se ha omitido: ID = {equipo_id}")
 
         return list(equipos_unicos.values())
-
